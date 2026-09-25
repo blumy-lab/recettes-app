@@ -1,0 +1,54 @@
+# ─────────────────────────────────────────────────────────────────────────
+# CI minimale : lint + tests + build de production sur chaque push et PR
+# vers la branche principale. Objectif : détecter les régressions avant
+# tout déploiement (le déploiement lui-même reste manuel).
+#
+# Secrets GitHub à configurer manuellement avant que l'étape de build ait
+# une configuration réaliste (Settings → Secrets and variables → Actions →
+# New repository secret) — voir les noms de variables dans src/lib/supabase.ts,
+# src/hooks/useHouseholds.ts, src/scraper.ts, src/lib/printRecipe.ts,
+# src/components/AuthScreen.tsx :
+#   VITE_SUPABASE_URL       URL du projet Supabase (ex: https://xxxx.supabase.co)
+#   VITE_SUPABASE_ANON_KEY  Clé anonyme publique Supabase (jamais la clé service_role)
+#   VITE_APP_URL            URL de déploiement de l'app
+#
+# Vérifié localement : `npm run build` compile avec succès même sans ces
+# variables (elles ne sont lues qu'au runtime par le client Supabase, pas
+# au moment de la compilation) — elles sont injectées ici uniquement pour
+# que le build reflète la configuration réelle, pas parce que le build en
+# a strictement besoin.
+#
+# Ne jamais mettre la clé GEMINI_API_KEY ici : elle n'est utilisée que
+# côté serveur (secret Supabase), jamais par le build front.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npx vitest run
+
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}

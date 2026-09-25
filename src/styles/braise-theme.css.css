@@ -1,0 +1,169 @@
+/* ============================================================
+   MES RECETTES — Thème « Braise » (sombre & raffiné)
+   Charbon + safran · Spectral / Hanken Grotesk / Space Mono
+   ------------------------------------------------------------
+   Intégration (React + Vite) :
+   1. Place ce fichier dans src/styles/braise-theme.css
+   2. Importe-le en haut de src/main.tsx :  import './styles/braise-theme.css'
+   3. Si tes variables actuelles ont d'autres noms (--bg-warm, etc.),
+      vois la section « ALIAS » plus bas, ou fais un find/replace.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600&family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+  color-scheme: dark;          /* champs natifs, scrollbars, etc. en sombre */
+
+  /* ---- Couleurs (tokens Braise) ---- */
+  --bg:          oklch(0.165 0.008 65);   /* fond app                */
+  --surface:     oklch(0.215 0.010 65);   /* cartes, champs          */
+  --surface-2:   oklch(0.258 0.012 65);   /* survol / éléments cochés */
+  --line:        oklch(0.310 0.010 65);   /* bordures, séparateurs   */
+  --text:        oklch(0.950 0.010 80);   /* texte principal         */
+  --muted:       oklch(0.660 0.012 70);   /* texte secondaire        */
+  --primary:     oklch(0.800 0.125 75);   /* safran — accent / CTA   */
+  --primary-ink: oklch(0.200 0.040 75);   /* texte SUR le safran     */
+
+  /* ---- Typo ---- */
+  --font-display: 'Spectral', Georgia, serif;       /* titres, noms de recettes */
+  --font-body:    'Hanken Grotesk', system-ui, sans-serif;
+  --font-label:   'Space Mono', ui-monospace, monospace; /* kickers en MAJUSCULES */
+
+  /* ---- Rayons & ombres ---- */
+  --radius:    16px;
+  --radius-sm: 12px;
+  --shadow:    0 10px 30px -12px rgba(0,0,0,.5);
+
+  /* ---- ALIAS : décommente/adapte si ton app utilise déjà ces noms ----
+  --bg-warm: var(--bg);
+  --card:    var(--surface);
+  --border:  var(--line);
+  --accent:  var(--primary);
+  ------------------------------------------------------------------- */
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .recipe-title { font-family: var(--font-display); font-weight: 500; letter-spacing: -.01em; }
+
+/* Kicker / petits libellés en capitales */
+.kicker, .section-label {
+  font-family: var(--font-label);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ============================================================
+   COMPOSANTS (noms repris de ta doc)
+   ============================================================ */
+
+/* En-tête d'écran fullscreen : ←  Titre  actions */
+.page-header {
+  display: flex; align-items: center; gap: 12px;
+  height: 52px; padding: 0 16px;
+  color: var(--text);
+}
+.page-header .title { font-family: var(--font-display); font-size: 17px; font-weight: 600; }
+
+/* Barre de navigation basse (4 onglets) */
+.bottom-nav {
+  display: flex; justify-content: space-around; align-items: center;
+  height: 64px; padding-bottom: env(safe-area-inset-bottom, 0);
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.bottom-nav .nav-item       { display: flex; flex-direction: column; align-items: center; gap: 4px;
+                              font-size: 10px; color: var(--muted); }
+.bottom-nav .nav-item.active { color: var(--primary); font-weight: 600; }
+
+/* Boutons */
+.btn-primary {
+  background: var(--primary); color: var(--primary-ink);
+  font-weight: 600; font-size: 15px;
+  border: none; border-radius: var(--radius-sm);
+  padding: 15px 18px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+}
+.btn-secondary {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  font-weight: 600; font-size: 14.5px; padding: 14px 18px;
+}
+.btn-icon {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--line);
+  color: var(--text);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.btn-icon.accent { background: var(--primary); color: var(--primary-ink); border: none; }
+
+/* Champ de formulaire */
+.form-input {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 12px 14px; font-size: 14px; font-family: var(--font-body);
+  width: 100%;
+}
+.form-input::placeholder { color: var(--muted); }
+.form-input:focus { outline: none; border-color: var(--primary); }
+
+/* Carte (recette, etc.) */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Carte recette publique (Explorer) */
+.explore-card { background: var(--surface); border: 1px solid var(--line);
+                border-radius: var(--radius); overflow: hidden; }
+.explore-card .meta { color: var(--muted); font-size: 12px; }
+
+/* Liste de courses */
+.rayon-group     { display: flex; flex-direction: column; gap: 13px; }
+.rayon-group .rayon-title { /* ajoute .kicker dans le markup pour la typo */ }
+
+.shopping-item {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 14.5px; color: var(--text);
+}
+.shopping-item .checkbox {
+  width: 20px; height: 20px; border-radius: 6px;
+  border: 1.5px solid var(--line); flex: none;
+}
+.shopping-item.checked            { opacity: .45; }
+.shopping-item.checked .label     { text-decoration: line-through; }
+.shopping-item.checked .checkbox  { background: var(--primary); border-color: var(--primary); }
+
+/* Chips / filtres */
+.chip        { background: var(--surface); border: 1px solid var(--line); color: var(--text);
+               border-radius: 100px; padding: 7px 14px; font-size: 12.5px; }
+.chip.active { background: var(--primary); color: var(--primary-ink); border-color: transparent; font-weight: 600; }
+
+/* État vide */
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 12px;
+               text-align: center; color: var(--muted); padding: 48px 24px; }
+.empty-state .title { font-family: var(--font-display); font-size: 18px; color: var(--text); }
+
+/* Spinner */
+.spinner {
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 3px solid var(--surface-2); border-top-color: var(--primary);
+  animation: braise-spin .9s linear infinite;
+}
+@keyframes braise-spin { to { transform: rotate(360deg); } }
+
+/* Placeholder image (avant tes vraies photos) */
+.img-placeholder {
+  background: repeating-linear-gradient(135deg, var(--surface) 0 12px, var(--surface-2) 12px 24px);
+}
