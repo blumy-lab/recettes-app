@@ -1,4 +1,5 @@
 import type { Recipe } from '../types'
+import { buildPublicRecipeUrl } from './publicRecipeUrl'
 
 function esc(s: string): string {
   return s
@@ -56,6 +57,11 @@ export function printRecipe(recipe: Recipe, currentServings: number): void {
     : ''
 
   const appUrl = (import.meta.env.VITE_APP_URL as string | undefined) ?? 'https://recettes.pharmaciepitondesgoyaves.re'
+  const isShareable = recipe.is_public && recipe.moderation_status === 'approved'
+  const shareUrl = isShareable ? buildPublicRecipeUrl(recipe.id, appUrl) : undefined
+  const footerHtml = shareUrl
+    ? `Imprimé depuis <a href="${esc(shareUrl)}">${esc(shareUrl)}</a>`
+    : `Imprimé depuis ${esc(appUrl)}`
 
   const html = `<!DOCTYPE html>
 <html lang="fr">
@@ -175,7 +181,7 @@ export function printRecipe(recipe: Recipe, currentServings: number): void {
     </ol>
   </section>
   ${notesSection}
-  <footer>Imprimé depuis ${esc(appUrl)}</footer>
+  <footer>${footerHtml}</footer>
 </body>
 </html>`
 

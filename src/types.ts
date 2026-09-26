@@ -32,6 +32,7 @@ export interface Profile {
   display_name: string
   avatar_url?: string
   dietary_filters?: string[]
+  season_zone: 'reunion' | 'metropole'
   created_at: string
 }
 
@@ -44,6 +45,7 @@ export interface MenuConfig {
   desserts: number
   tags: string[]
   persons: number
+  considerSeasonality: boolean
 }
 
 export interface MenuSlot {

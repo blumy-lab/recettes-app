@@ -161,6 +161,24 @@ export async function getPublicRecipes(
   }
 }
 
+export async function getPublicRecipeById(id: string): Promise<Recipe | null> {
+  const { data: row, error } = await supabase
+    .from('recipes')
+    .select('*')
+    .eq('id', id)
+    .eq('is_public', true)
+    .eq('moderation_status', 'approved')
+    .single()
+  if (error || !row) return null
+
+  const { data: profiles } = row.user_id
+    ? await supabase.from('profiles').select('user_id, display_name').eq('user_id', row.user_id as string)
+    : { data: [] }
+  const authorName = profiles?.[0]?.display_name as string | undefined
+
+  return { ...toRecipe(row), author_name: authorName || undefined }
+}
+
 export async function publishRecipe(id: string, status: 'approved' | 'private'): Promise<{ ok: boolean; reason?: string }> {
   if (status === 'private') {
     const { error } = await supabase
@@ -287,16 +305,22 @@ export async function getShoppingLists(): Promise<ShoppingList[]> {
   }))
 }
 
-export async function createShoppingList(name: string): Promise<ShoppingList> {
+export async function createShoppingList(name: string, householdId?: string | null, isPrivate?: boolean): Promise<ShoppingList> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Non connecté')
   const { data, error } = await supabase
     .from('shopping_lists')
-    .insert({ user_id: user.id, name })
+    .insert({ user_id: user.id, name, household_id: householdId || null, is_private: isPrivate || false })
     .select()
     .single()
   if (error) throw error
-  return { id: data.id, name: data.name, created_at: data.created_at }
+  return {
+    id: data.id,
+    name: data.name,
+    created_at: data.created_at,
+    household_id: (data.household_id as string) || null,
+    is_private: (data.is_private as boolean) || false,
+  }
 }
 
 export async function renameShoppingList(id: string, name: string): Promise<void> {
@@ -512,6 +536,7 @@ export async function getProfile(): Promise<Profile | null> {
     display_name: data.display_name,
     avatar_url: data.avatar_url ?? undefined,
     dietary_filters: (data.dietary_filters as string[]) ?? [],
+    season_zone: (data.season_zone as Profile['season_zone']) ?? 'reunion',
     created_at: data.created_at,
   } : null
 }
@@ -529,6 +554,13 @@ export async function saveDietaryFilters(filters: string[]): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Non connecté')
   const { error } = await supabase.from('profiles').upsert({ user_id: user.id, dietary_filters: filters })
+  if (error) throw error
+}
+
+export async function saveSeasonZone(zone: Profile['season_zone']): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Non connecté')
+  const { error } = await supabase.from('profiles').upsert({ user_id: user.id, season_zone: zone })
   if (error) throw error
 }
 
@@ -595,7 +627,12 @@ export async function isDisplayNameAvailable(name: string): Promise<boolean> {
 
 export async function searchProfileByName(pseudo: string): Promise<Profile | null> {
   const { data } = await supabase.from('profiles').select('*').eq('display_name', pseudo.trim()).maybeSingle()
-  return data ? { user_id: data.user_id, display_name: data.display_name, created_at: data.created_at } : null
+  return data ? {
+    user_id: data.user_id,
+    display_name: data.display_name,
+    created_at: data.created_at,
+    season_zone: (data.season_zone as Profile['season_zone']) ?? 'reunion',
+  } : null
 }
 
 /* ── Shopping list shares ── */

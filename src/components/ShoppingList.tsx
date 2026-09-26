@@ -23,11 +23,13 @@ import { supabase } from '../lib/supabase'
 import { enqueue } from '../lib/offlineQueue'
 import { useOfflineSync } from '../hooks/useOfflineSync'
 import { useConfirm } from '../hooks/useConfirm'
+import { useHouseholds } from '../hooks/useHouseholds'
 
 const UNITS = ['', 'g', 'kg', 'ml', 'cl', 'L', 'c. à café', 'c. à soupe', 'pincée', 'sachet', 'tranche', 'feuille']
 
 export default function ShoppingList() {
   const { confirm } = useConfirm()
+  const { households } = useHouseholds()
   const [lists, setLists] = useState<ShoppingList[]>([])
   const [activeListId, setActiveListIdState] = useState<string | null>(getActiveListId())
   const [items, setItems] = useState<ShoppingItem[]>([])
@@ -43,6 +45,8 @@ export default function ShoppingList() {
   const [newName, setNewName] = useState('')
   const [showNewList, setShowNewList] = useState(false)
   const [newListName, setNewListName] = useState('')
+  const [newListHouseholdId, setNewListHouseholdId] = useState('')
+  const [newListPrivate, setNewListPrivate] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [showScanReceipt, setShowScanReceipt] = useState(false)
   const [rayonPickerItemId, setRayonPickerItemId] = useState<string | null>(null)
@@ -52,6 +56,17 @@ export default function ShoppingList() {
   const [pantryToast, setPantryToast] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
   const listMenuRef = useRef<HTMLDivElement>(null)
+
+  const loadItems = async (listId: string) => {
+    setLoading(true)
+    try {
+      setItems(await getShoppingList(listId))
+    } catch (e) {
+      console.error('Erreur chargement liste:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useOfflineSync(async ({ synced }) => {
     if (synced > 0) {
@@ -82,19 +97,8 @@ export default function ShoppingList() {
     return activeId!
   }
 
-  const loadItems = async (listId: string) => {
-    setLoading(true)
-    try {
-      setItems(await getShoppingList(listId))
-    } catch (e) {
-      console.error('Erreur chargement liste:', e)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    loadLists().then((id) => loadItems(id))
+    queueMicrotask(() => { loadLists().then((id) => loadItems(id)) })
 
     const onOnline = () => setIsOnline(true)
     const onOffline = () => setIsOnline(false)
@@ -117,8 +121,10 @@ export default function ShoppingList() {
   }, [])
 
   useEffect(() => {
-    if (input.length >= 2) setSuggestions(searchIngredients(input).slice(0, 5))
-    else setSuggestions([])
+    queueMicrotask(() => {
+      if (input.length >= 2) setSuggestions(searchIngredients(input).slice(0, 5))
+      else setSuggestions([])
+    })
   }, [input])
 
   useEffect(() => {
@@ -141,9 +147,11 @@ export default function ShoppingList() {
   const handleCreateList = async () => {
     const name = newListName.trim()
     if (!name) return
-    const list = await createShoppingList(name)
+    const list = await createShoppingList(name, newListHouseholdId || null, newListPrivate)
     setLists((prev) => [...prev, list])
     setNewListName('')
+    setNewListHouseholdId('')
+    setNewListPrivate(false)
     setShowNewList(false)
     switchList(list.id)
   }
@@ -321,16 +329,42 @@ export default function ShoppingList() {
               ))}
               <div className="list-dropdown-divider" />
               {showNewList ? (
-                <div className="list-new-row" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    className="list-name-input"
-                    placeholder="Nom de la liste…"
-                    value={newListName}
-                    onChange={(e) => setNewListName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleCreateList() }}
-                    autoFocus
-                  />
-                  <button className="btn-icon small" onClick={handleCreateList}>✓</button>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <div className="list-new-row">
+                    <input
+                      className="list-name-input"
+                      placeholder="Nom de la liste…"
+                      value={newListName}
+                      onChange={(e) => setNewListName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleCreateList() }}
+                      autoFocus
+                    />
+                    <button className="btn-icon small" onClick={handleCreateList}>✓</button>
+                  </div>
+                  {households.length > 0 && (
+                    <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <select
+                        value={newListHouseholdId}
+                        onChange={(e) => { setNewListHouseholdId(e.target.value); if (!e.target.value) setNewListPrivate(false) }}
+                        style={{ fontSize: 13 }}
+                      >
+                        <option value="">Aucun (liste personnelle)</option>
+                        {households.map((h) => (
+                          <option key={h.id} value={h.id}>{h.name}</option>
+                        ))}
+                      </select>
+                      {newListHouseholdId && (
+                        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input
+                            type="checkbox"
+                            checked={newListPrivate}
+                            onChange={(e) => setNewListPrivate(e.target.checked)}
+                          />
+                          🔒 Garder cette liste privée
+                        </label>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <button className="list-dropdown-item new" onClick={(e) => { e.stopPropagation(); setShowNewList(true) }}>

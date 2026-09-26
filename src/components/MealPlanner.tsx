@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import type { Recipe, MenuMealType, MenuConfig, MenuSlot, SavedMenu, PantryItem } from '../types'
 import {
   getPublicRecipes, addIngredientsToShoppingList, getActiveListId,
@@ -11,7 +11,8 @@ import { detectRayon } from '../rayons'
 import { mergeQuantity } from '../lib/units'
 import { scorePantryMatch } from '../lib/pantryMatcher'
 
-import { generateSlots, replaceSlot } from '../lib/menuGenerator'
+import { generateSlots, replaceSlot, withConfigDefaults } from '../lib/menuGenerator'
+import type { SeasonZone } from '../lib/seasonalCalendar'
 
 /* ── Shopping consolidation ── */
 
@@ -40,6 +41,11 @@ function consolidate(slots: MenuSlot[], recipes: Recipe[], persons: number): Con
     }
   }
   return Array.from(map.values()).sort((a, b) => a.rayon.localeCompare(b.rayon) || a.name.localeCompare(b.name))
+}
+
+const SEASON_ZONE_LABELS: Record<SeasonZone, string> = {
+  reunion: 'La Réunion',
+  metropole: 'France métropolitaine',
 }
 
 /* ── Supabase helpers ── */
@@ -101,18 +107,23 @@ interface Props {
   defaultDietaryFilters?: string[]
   pendingMenuId?: string | null
   onMenuOpened?: () => void
+  seasonZone?: SeasonZone | null
 }
 
 /* ── Component ── */
 
-export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRecipe, defaultDietaryFilters = [], pendingMenuId, onMenuOpened }: Props) {
+export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRecipe, defaultDietaryFilters = [], pendingMenuId, onMenuOpened, seasonZone = null }: Props) {
   const { confirm } = useConfirm()
   const [screen, setScreen] = useState<Screen>('list')
-  const [config, setConfig] = useState<MenuConfig>({ days: 7, entrees: 0, plats: 7, desserts: 0, tags: defaultDietaryFilters, persons: 4 })
+  const [config, setConfig] = useState<MenuConfig>({ days: 7, entrees: 0, plats: 7, desserts: 0, tags: defaultDietaryFilters, persons: 4, considerSeasonality: true })
   const [slots, setSlots] = useState<MenuSlot[]>([])
   const [menuName, setMenuName] = useState('')
   const [savedMenus, setSavedMenus] = useState<SavedMenu[]>([])
-  const [allRecipes, setAllRecipes] = useState<Recipe[]>(recipes)
+  const [publicRecipes, setPublicRecipes] = useState<Recipe[]>([])
+  const allRecipes = useMemo(() => {
+    const ids = new Set(recipes.map(r => r.id))
+    return [...recipes, ...publicRecipes.filter(r => !ids.has(r.id))]
+  }, [recipes, publicRecipes])
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [loadingMenus, setLoadingMenus] = useState(true)
@@ -141,12 +152,7 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUserId(user.id) })
     fetchMenus().then(m => { setSavedMenus(m); setLoadingMenus(false) })
-    getPublicRecipes().then(({ data: pub }) => {
-      setAllRecipes(prev => {
-        const ids = new Set(prev.map(r => r.id))
-        return [...prev, ...pub.filter(r => !ids.has(r.id))]
-      })
-    }).catch(() => {})
+    getPublicRecipes().then(({ data: pub }) => setPublicRecipes(pub)).catch(() => {})
     getPantryItems().then(setPantryItems).catch(() => {})
   }, [])
 
@@ -170,7 +176,7 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
     if (menu) {
       fetchMenuItems(menu.id, allRecipesRef.current).then(items => {
         setSlots(items)
-        setConfig(menu.config)
+        setConfig(withConfigDefaults(menu.config))
         setMenuName(menu.name)
         setSavedMenuId(menu.id)
         setIsMenuOwner(!menu.household_id || menu.user_id === currentUserId)
@@ -187,7 +193,7 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
   }
 
   const handleGenerate = () => {
-    setSlots(generateSlots(allRecipes, config, [], pantryItems))
+    setSlots(generateSlots(allRecipes, config, [], pantryItems, seasonZone, config.considerSeasonality))
     setMenuName('')
     setSavedMenuId(null)
     setIsMenuOwner(true)
@@ -196,7 +202,7 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
 
   const handleRegenerate = () => {
     const locked = slots.filter(s => s.locked)
-    const newSlots = generateSlots(allRecipes, config, locked, pantryItems)
+    const newSlots = generateSlots(allRecipes, config, locked, pantryItems, seasonZone, config.considerSeasonality)
     setSlots(newSlots)
     if (savedMenuId) {
       replaceMenuSlots(savedMenuId, newSlots).catch(e => console.error('Regenérer persist error:', e))
@@ -256,7 +262,7 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
   const handleOpenSaved = async (menu: SavedMenu) => {
     const items = await fetchMenuItems(menu.id, allRecipes)
     setSlots(items)
-    setConfig(menu.config)
+    setConfig(withConfigDefaults(menu.config))
     setMenuName(menu.name)
     setSavedMenuId(menu.id)
     setIsMenuOwner(!menu.household_id || menu.user_id === currentUserId)
@@ -493,6 +499,34 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
               Seules les recettes ayant tous ces tags seront utilisées.
             </p>
           )}
+        </div>
+
+        {/* Seasonality toggle */}
+        <div>
+          <label
+            style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              cursor: seasonZone ? 'pointer' : 'not-allowed',
+              opacity: seasonZone ? 1 : 0.5,
+            }}
+            title={seasonZone ? undefined : 'Zone non définie dans votre profil'}
+          >
+            <input
+              type="checkbox"
+              checked={config.considerSeasonality}
+              disabled={!seasonZone}
+              onChange={e => setConfig(c => ({ ...c, considerSeasonality: e.target.checked }))}
+              style={{ marginTop: 3, flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>🌱 Favoriser les produits de saison</span>
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                {seasonZone
+                  ? `Départage entre recettes équivalentes selon votre zone (${SEASON_ZONE_LABELS[seasonZone]}). N'exclut jamais une recette hors-saison.`
+                  : 'Zone non définie dans votre profil.'}
+              </p>
+            </span>
+          </label>
         </div>
 
         {pantryItems.length > 0 && (

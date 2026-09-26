@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import type { Recipe } from '../types'
 import { addIngredientsToShoppingList, deleteRecipe, saveRecipeNotes, publishRecipe, toggleFavorite, reportRecipe, savePublicRecipe, uploadRecipePhoto } from '../store'
 import { useConfirm } from '../hooks/useConfirm'
@@ -7,6 +7,8 @@ import { supabase } from '../lib/supabase'
 import { getTagDef } from '../tags'
 import CookingMode from './CookingMode'
 import { printRecipe } from '../lib/printRecipe'
+import { buildPublicRecipeUrl } from '../lib/publicRecipeUrl'
+import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
 
 interface Props {
   recipe: Recipe
@@ -15,6 +17,7 @@ interface Props {
   onRefresh: () => void
   isPublicView?: boolean
   onSaved?: () => void
+  seasonZone?: SeasonZone | null
 }
 
 function scaleQty(qty: string, ratio: number): string {
@@ -26,8 +29,12 @@ function scaleQty(qty: string, ratio: number): string {
   return String(Math.round(result * 10) / 10)
 }
 
-export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPublicView = false, onSaved }: Props) {
+export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPublicView = false, onSaved, seasonZone = null }: Props) {
   const { confirm } = useConfirm()
+  const isSeasonal = useMemo(
+    () => seasonZone ? isRecipeInSeason(recipe.ingredients, seasonZone) : false,
+    [recipe.ingredients, seasonZone]
+  )
   const [servings, setServings] = useState(recipe.servings || 4)
   const [adding, setAdding] = useState(false)
   const [notes, setNotes] = useState(recipe.user_notes || '')
@@ -184,11 +191,11 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
       recipe.source_url ? `\n🔗 ${recipe.source_url}` : '',
     ].filter(Boolean).join('\n')
 
-    const shareData = {
-      title: recipe.title,
-      text,
-      url: recipe.source_url || window.location.href,
-    }
+    const isShareable = recipe.is_public && recipe.moderation_status === 'approved'
+    const shareUrl = isShareable ? buildPublicRecipeUrl(recipe.id) : (recipe.source_url || undefined)
+
+    const shareData: ShareData = { title: recipe.title, text }
+    if (shareUrl) shareData.url = shareUrl
 
     if (navigator.share) {
       try { await navigator.share(shareData) } catch { /* annulé par l'utilisateur */ }
@@ -332,9 +339,12 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
           </button>
         )}
 
-        {recipe.tags && recipe.tags.length > 0 && (
+        {((recipe.tags && recipe.tags.length > 0) || isSeasonal) && (
           <div className="recipe-tags">
-            {recipe.tags.map((tagId) => {
+            {isSeasonal && (
+              <span className="recipe-tag recipe-tag--local">🌱 De saison</span>
+            )}
+            {recipe.tags?.map((tagId) => {
               const def = getTagDef(tagId)
               if (!def) return null
               return (

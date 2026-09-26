@@ -32,7 +32,9 @@ function detectSite(url: string): { name: string; emoji: string; known: boolean;
     const match = KNOWN_SITES.find((s) => hostname.includes(s.domain))
     if (match) return { name: match.name, emoji: match.emoji, known: true, blocked: match.blocked }
     if (hostname) return { name: hostname, emoji: '⚠️', known: false }
-  } catch {}
+  } catch {
+    // URL invalide : on l'ignore, detectSite retombe sur null
+  }
   return null
 }
 
@@ -46,23 +48,6 @@ export default function ImportRecipe({ onBack, onSuccess, onImportPhoto }: Props
   const [site, setSite] = useState<{ name: string; emoji: string; known: boolean; blocked?: boolean } | null>(null)
   const [clipText, setClipText] = useState('')
   const [clipPasted, setClipPasted] = useState(false)
-
-  useEffect(() => {
-    const shared = sessionStorage.getItem('shared_url')
-    if (shared) {
-      sessionStorage.removeItem('shared_url')
-      setTab('url')
-      setUrl(shared)
-      setSite(detectSite(shared))
-      handleImportUrl(shared)
-    }
-  }, [])
-
-  const handleUrlChange = (val: string) => {
-    setUrl(val)
-    setError('')
-    setSite(val.trim() ? detectSite(val.trim()) : null)
-  }
 
   const handleImportUrl = useCallback(async (targetUrl: string) => {
     const u = targetUrl.trim()
@@ -79,6 +64,25 @@ export default function ImportRecipe({ onBack, onSuccess, onImportPhoto }: Props
       setLoading(false)
     }
   }, [onSuccess])
+
+  useEffect(() => {
+    const shared = sessionStorage.getItem('shared_url')
+    if (shared) {
+      sessionStorage.removeItem('shared_url')
+      queueMicrotask(() => {
+        setTab('url')
+        setUrl(shared)
+        setSite(detectSite(shared))
+        handleImportUrl(shared)
+      })
+    }
+  }, [handleImportUrl])
+
+  const handleUrlChange = (val: string) => {
+    setUrl(val)
+    setError('')
+    setSite(val.trim() ? detectSite(val.trim()) : null)
+  }
 
   const handlePasteClipboard = async () => {
     try {

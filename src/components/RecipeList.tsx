@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { Recipe } from '../types'
 import { getRecipes, deleteRecipe, getProfile } from '../store'
 import { useConfirm } from '../hooks/useConfirm'
 import { FILTER_CHIPS, getTagDef } from '../tags'
+import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
 
 type SortMode = 'recent' | 'az' | 'duration' | 'favorites' | 'popular'
 
@@ -13,9 +14,10 @@ interface Props {
   onGoToProfile: () => void
   dietaryFilters?: string[]
   refreshKey?: number
+  seasonZone?: SeasonZone | null
 }
 
-export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile, dietaryFilters = [], refreshKey = 0 }: Props) {
+export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile, dietaryFilters = [], refreshKey = 0, seasonZone = null }: Props) {
   const { confirm } = useConfirm()
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,7 +76,7 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
 
   // Recharge depuis la page 0 si recherche/filtres/tri/refreshKey changent
   useEffect(() => {
-    fetchPage(0, false)
+    queueMicrotask(() => fetchPage(0, false))
   }, [fetchPage, refreshKey])
 
   const toggleTagFilter = (tag: string) => {
@@ -102,6 +104,14 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
     await deleteRecipe(id)
     setRecipes(prev => prev.filter(r => r.id !== id))
   }
+
+  const seasonalIds = useMemo(() => {
+    if (!seasonZone) return null
+    const month = new Date().getMonth() + 1
+    const ids = new Set<string>()
+    for (const r of recipes) if (isRecipeInSeason(r.ingredients, seasonZone, month)) ids.add(r.id)
+    return ids
+  }, [recipes, seasonZone])
 
   const isEmpty = !loading && recipes.length === 0 && !debouncedSearch.trim() && activeTagFilters.length === 0
   const noResults = !loading && sorted.length === 0 && (!!debouncedSearch.trim() || activeTagFilters.length > 0)
@@ -223,6 +233,7 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
                     {recipe.cook_time && <span>🔥 {recipe.cook_time} min</span>}
                     {recipe.servings && <span>👥 {recipe.servings} pers.</span>}
                     <span>🥄 {recipe.ingredients.length} ingr.</span>
+                    {seasonalIds?.has(recipe.id) && <span>🌱 De saison</span>}
                   </div>
                 </div>
                 <button className="btn-icon delete" onClick={(e) => handleDelete(e, recipe.id)}>🗑</button>

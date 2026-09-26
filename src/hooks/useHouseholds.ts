@@ -29,7 +29,7 @@ export function useHouseholds(): HouseholdsContextType {
   return ctx
 }
 
-async function fetchHouseholds(_userId: string): Promise<Household[]> {
+async function fetchHouseholds(): Promise<Household[]> {
   const { data, error } = await supabase.rpc('get_my_households')
   if (error) throw new Error(error.message)
 
@@ -96,7 +96,7 @@ export function HouseholdsProvider({ children }: ProviderProps) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setHouseholds([]); setIsLoading(false); return }
     try {
-      const result = await fetchHouseholds(user.id)
+      const result = await fetchHouseholds()
       setHouseholds(result)
     } catch (e) {
       console.error('[useHouseholds] fetchHouseholds error:', e)
@@ -107,7 +107,7 @@ export function HouseholdsProvider({ children }: ProviderProps) {
   }, [])
 
   useEffect(() => {
-    reload()
+    queueMicrotask(() => reload())
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) reload()
       else { setHouseholds([]); setIsLoading(false) }
