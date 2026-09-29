@@ -64,6 +64,21 @@ export default function PublicRecipeView({ recipeId }: Props) {
           </div>
         )}
 
+        {recipe.nutrition_calories != null && (
+          <div style={{ margin: '0 0 16px', padding: '12px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>
+              🔥 {Math.round(recipe.nutrition_calories)} kcal
+              <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 12 }}> /pers.</span>
+            </span>
+            <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>
+              <span>🥩 {Math.round(recipe.nutrition_proteins ?? 0)}g prot.</span>
+              <span>🧈 {Math.round(recipe.nutrition_fat ?? 0)}g lip.</span>
+              <span>🌾 {Math.round(recipe.nutrition_carbs ?? 0)}g gluc.</span>
+            </div>
+            <p style={{ margin: '6px 0 0', fontSize: 10, color: 'var(--text-tertiary)' }}>Estimation IA — à titre indicatif</p>
+          </div>
+        )}
+
         <section className="detail-section">
           <h2>Ingrédients</h2>
           <ul className="ingredient-list">

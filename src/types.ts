@@ -25,6 +25,11 @@ export interface Recipe {
   favorites_count?: number
   tags?: string[]
   author_name?: string
+  nutrition_calories?: number
+  nutrition_proteins?: number
+  nutrition_fat?: number
+  nutrition_carbs?: number
+  nutrition_base?: number
 }
 
 export interface Profile {

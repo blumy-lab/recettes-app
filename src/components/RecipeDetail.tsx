@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { Recipe } from '../types'
-import { addIngredientsToShoppingList, deleteRecipe, saveRecipeNotes, publishRecipe, toggleFavorite, reportRecipe, savePublicRecipe, uploadRecipePhoto } from '../store'
+import { addIngredientsToShoppingList, deleteRecipe, saveRecipeNotes, publishRecipe, toggleFavorite, reportRecipe, savePublicRecipe, uploadRecipePhoto, saveNutrition } from '../store'
 import { useConfirm } from '../hooks/useConfirm'
 import { moderateRecipe, estimateNutrition, type NutritionEstimate } from '../lib/gemini'
 import { supabase } from '../lib/supabase'
@@ -56,8 +56,12 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
   const [photoUploading, setPhotoUploading] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const publishingRef = useRef(false)
-  const [nutrition, setNutrition] = useState<NutritionEstimate | null>(null)
-  const [nutritionBase, setNutritionBase] = useState<number>(recipe.servings || 4)
+  const [nutrition, setNutrition] = useState<NutritionEstimate | null>(
+    recipe.nutrition_calories != null
+      ? { calories: recipe.nutrition_calories, proteins: recipe.nutrition_proteins ?? 0, fat: recipe.nutrition_fat ?? 0, carbs: recipe.nutrition_carbs ?? 0 }
+      : null
+  )
+  const [nutritionBase, setNutritionBase] = useState<number>(recipe.nutrition_base ?? recipe.servings ?? 4)
   const [estimating, setEstimating] = useState(false)
   const base = recipe.servings || 4
   const ratio = servings / base
@@ -222,8 +226,10 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
     setEstimating(true)
     try {
       const result = await estimateNutrition(recipe.title, recipe.ingredients, servings)
+      await saveNutrition(recipe.id, result, servings)
       setNutrition(result)
       setNutritionBase(servings)
+      onRefresh()
     } catch {
       await confirm({ title: 'Estimation impossible, réessayez.' })
     } finally {
@@ -317,10 +323,12 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
                 🔥 {Math.round(nutrition.calories * (servings / nutritionBase))} kcal
                 <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', fontSize: 12 }}> /pers.</span>
               </span>
-              <button style={{ background: 'none', border: 'none', fontSize: 11, color: 'var(--text-tertiary)', cursor: 'pointer', padding: 0 }}
-                onClick={handleEstimateNutrition} disabled={estimating}>
-                {estimating ? '…' : '↺ Recalculer'}
-              </button>
+              {!isPublicView && (
+                <button style={{ background: 'none', border: 'none', fontSize: 11, color: 'var(--text-tertiary)', cursor: 'pointer', padding: 0 }}
+                  onClick={handleEstimateNutrition} disabled={estimating}>
+                  {estimating ? '…' : '↺ Recalculer'}
+                </button>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
               <span>🥩 {Math.round(nutrition.proteins * (servings / nutritionBase))}g prot.</span>
@@ -329,7 +337,7 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
             </div>
             <p style={{ margin: '6px 0 0', fontSize: 10, color: 'var(--text-tertiary)' }}>Estimation IA — à titre indicatif</p>
           </div>
-        ) : (
+        ) : !isPublicView ? (
           <button
             style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: '1px dashed var(--border)', borderRadius: 10, padding: '8px 14px', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer', width: '100%', marginBottom: 16 }}
             onClick={handleEstimateNutrition}
@@ -337,7 +345,7 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
           >
             {estimating ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Estimation en cours…</> : '⚡ Estimer les calories par portion'}
           </button>
-        )}
+        ) : null}
 
         {((recipe.tags && recipe.tags.length > 0) || isSeasonal) && (
           <div className="recipe-tags">

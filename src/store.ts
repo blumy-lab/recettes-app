@@ -1,4 +1,5 @@
 import type { Recipe, ShoppingItem, ShoppingList, Profile, ScannedItem, PantryItem } from './types'
+import type { NutritionEstimate } from './lib/gemini'
 import { detectRayon } from './rayons'
 import { supabase } from './lib/supabase'
 import { normalizeIngredientName } from './lib/normalizeIngredientName'
@@ -71,6 +72,17 @@ export async function saveRecipeNotes(id: string, notes: string, photoUrl?: stri
   if (error) throw error
 }
 
+export async function saveNutrition(id: string, nutrition: NutritionEstimate, base: number): Promise<void> {
+  const { error } = await supabase.from('recipes').update({
+    nutrition_calories: nutrition.calories,
+    nutrition_proteins: nutrition.proteins,
+    nutrition_fat: nutrition.fat,
+    nutrition_carbs: nutrition.carbs,
+    nutrition_base: base,
+  }).eq('id', id)
+  if (error) throw error
+}
+
 export async function deleteRecipe(id: string): Promise<void> {
   const { error } = await supabase.from('recipes').delete().eq('id', id)
   if (error) throw error
@@ -108,6 +120,11 @@ function toRecipe(row: Record<string, unknown>): Recipe {
     user_id: (row.user_id as string) || undefined,
     is_favorite: (row.is_favorite as boolean) || false,
     tags: (row.tags as string[]) || [],
+    nutrition_calories: (row.nutrition_calories as number) ?? undefined,
+    nutrition_proteins: (row.nutrition_proteins as number) ?? undefined,
+    nutrition_fat: (row.nutrition_fat as number) ?? undefined,
+    nutrition_carbs: (row.nutrition_carbs as number) ?? undefined,
+    nutrition_base: (row.nutrition_base as number) ?? undefined,
   }
 }
 
