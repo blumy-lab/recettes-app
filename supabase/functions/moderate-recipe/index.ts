@@ -5,7 +5,7 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

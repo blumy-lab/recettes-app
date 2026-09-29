@@ -1,6 +1,7 @@
 import type { Recipe, ShoppingItem, ShoppingList, Profile, ScannedItem, PantryItem } from './types'
 import { detectRayon } from './rayons'
 import { supabase } from './lib/supabase'
+import { normalizeIngredientName } from './lib/normalizeIngredientName'
 
 /* ── Recipes ── */
 
@@ -355,8 +356,8 @@ async function mergeOrInsertItem(
   existing: ShoppingItem[],
   item: { name: string; quantity: string; unit: string; checked: boolean; rayon: string; recipe_id?: string | null; recipe_title?: string | null }
 ): Promise<void> {
-  const key = item.name.toLowerCase().trim()
-  const match = existing.find((e) => e.name.toLowerCase().trim() === key && !e.checked)
+  const key = normalizeIngredientName(item.name)
+  const match = existing.find((e) => normalizeIngredientName(e.name) === key && !e.checked)
   if (match && match.id) {
     const { qty: newQty, unit: newUnit } = mergeQuantity(match.quantity, item.quantity, match.unit, item.unit)
     const { error } = await supabase
