@@ -1,6 +1,6 @@
 # Rapport technique et fonctionnel — "Mes Recettes" (recettes-app)
 
-*Rapport produit à partir de la lecture exhaustive des 36 fichiers source TypeScript/TSX du projet (hors `node_modules`), des 5 fichiers de schéma SQL versionnés, des 2 Edge Functions et de la configuration Vite/PWA/ESLint. Suite de tests exécutée en direct (`npx vitest run` — 59/59 verts) et build de production vérifié (`npm run build` — 0 erreur TypeScript). État du code analysé : 24 septembre 2026.*
+*Rapport produit à partir de la lecture exhaustive des 36 fichiers source TypeScript/TSX du projet (hors `node_modules`), des 5 fichiers de schéma SQL versionnés, des 2 Edge Functions et de la configuration Vite/PWA/ESLint. Suite de tests exécutée en direct (`npx vitest run` — 59/59 verts) et build de production vérifié (`npm run build` — 0 erreur TypeScript). État du code analysé : 24 septembre 2026, mis à jour le 25 septembre 2026 après vérification via `git log` que le code applicatif (`src/`, `supabase/`) est resté strictement identique — seule l'infrastructure Git/CI a changé depuis.*
 
 ---
 
@@ -47,10 +47,12 @@ src/
 seeds/                     16 fichiers SQL de données initiales (recettes françaises)
 supabase/functions/   gemini-proxy/, moderate-recipe/ (Edge Functions Deno)
 supabase-*.sql            5 fichiers de schéma versionnés (partiel — voir §4)
+.github/workflows/    ci.yml — pipeline lint/test/build (nouveau, voir §5 et §6)
 ```
 
-**URL de déploiement :** `https://recettes.pharmaciepitondesgoyaves.re`
+**URL de déploiement :** `https://recettes.pharmaciepitondesgoyaves.re` (déploiement manuel — build local + zip, indépendant de GitHub)
 **Supabase Project :** `qgcujfrgfjcsdapciucm.supabase.co`
+**Dépôt Git :** `github.com/blumy-lab/recettes-app` (privé) — *nouveau depuis le 25 septembre 2026, le projet n'avait aucun historique de version avant cette date*
 
 > **Correction par rapport à la version précédente de ce rapport (22 septembre) :** le dépôt contenait alors un système de foyers v1 mort (`HouseholdScreen.tsx`, `lib/household.ts`). Il a depuis été entièrement retiré — seul `useHouseholds.ts` (v2, code d'invitation à 8 caractères) subsiste, intégré à `ProfileScreen`.
 
@@ -298,6 +300,8 @@ Parsing : extraction des blocs `<script type="application/ld+json">`, recherche 
 
 **Pagination serveur.** `getRecipes` et `getPublicRecipes` paginent réellement (20/page, `count: 'exact'`) — pas de chargement intégral de la base.
 
+**CI automatisée** *(nouveau)*. Un pipeline GitHub Actions (`.github/workflows/ci.yml`) relance automatiquement lint + 59 tests + build à chaque push/PR — nuances en points faibles ci-dessous.
+
 **Système de tags complet, design system cohérent, réactivité temps réel bien gérée, UX soignée** (drag-and-drop, autocomplétion, deep links d'invitation, partage natif multi-canal).
 
 ### Points faibles et dette technique
@@ -314,7 +318,7 @@ Parsing : extraction des blocs `<script type="application/ld+json">`, recherche 
 
 **`eslint-disable` ciblés.** 2 occurrences de `react-hooks/exhaustive-deps` désactivées (`CookingMode.tsx`, `MealPlanner.tsx`) — dépendances volontairement omises, pattern fragile en cas de refactor futur.
 
-**Aucun test end-to-end ni CI.** Pas de `.github/workflows` dans le dépôt — les 59 tests unitaires/composants ne sont exécutés qu'à la main (`npm test`), aucune vérification automatique avant déploiement.
+**CI en place mais pas encore verte, et pas bloquante.** Le pipeline `build-and-test` échoue actuellement dès l'étape `lint` (26 erreurs préexistantes, voir ci-dessus) — tant que ce n'est pas corrigé, le badge CI reste rouge en permanence, ce qui en réduit la valeur de signal. De plus, une règle de protection de branche a été configurée sur `main` mais **n'est pas appliquée** : GitHub n'impose pas les règles de protection sur un dépôt privé en plan gratuit (il faudrait un plan Team/Enterprise, ou rendre le dépôt public). La CI est donc pour l'instant informative, pas bloquante. Toujours aucun test end-to-end (Playwright/Cypress absents).
 
 ### Couverture de tests — détail
 
@@ -355,4 +359,4 @@ Parsing : extraction des blocs `<script type="application/ld+json">`, recherche 
 
 ---
 
-*Version précédente de ce rapport : 22 septembre 2026. Mise à jour du 24 septembre 2026 après ajout du garde-manger, du scan de ticket de caisse, de la photo personnelle sur recette, de l'extraction du partage de liste en composant dédié, de la suite de tests (0 → 59), et de la sécurisation complète de l'intégration Gemini.*
+*Versions précédentes de ce rapport : 22 septembre 2026 ; mise à jour du 24 septembre 2026 après ajout du garde-manger, du scan de ticket de caisse, de la photo personnelle sur recette, de l'extraction du partage de liste en composant dédié, de la suite de tests (0 → 59), et de la sécurisation complète de l'intégration Gemini ; mise à jour du 25 septembre 2026 après mise en place du dépôt GitHub (`blumy-lab/recettes-app`) et d'une CI GitHub Actions (lint/test/build) — code applicatif inchangé, vérifié via `git log`.*
