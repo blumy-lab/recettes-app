@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Profile, Household } from '../types'
-import { getProfile, saveProfile, isDisplayNameAvailable, uploadAvatar, updatePassword, saveDietaryFilters } from '../store'
+import { getProfile, saveProfile, isDisplayNameAvailable, uploadAvatar, updatePassword, saveDietaryFilters, saveSeasonZone } from '../store'
 import { supabase } from '../lib/supabase'
 import { useHouseholds } from '../hooks/useHouseholds'
 import { useConfirm } from '../hooks/useConfirm'
@@ -11,6 +11,11 @@ const DIETARY_OPTIONS = [
   { value: 'sans-porc', label: '🚫🐷 Sans porc' },
   { value: 'sans-gluten', label: '🌾 Sans gluten' },
   { value: 'sans-lactose', label: '🥛 Sans lactose' },
+]
+
+const SEASON_ZONE_OPTIONS: { value: Profile['season_zone']; label: string }[] = [
+  { value: 'reunion', label: '🌴 La Réunion' },
+  { value: 'metropole', label: '🇫🇷 France métropolitaine' },
 ]
 
 interface Props {
@@ -107,6 +112,7 @@ export default function ProfileScreen({ onBack, onSignOut, isPasswordRecovery = 
     return saved ? saved === 'dark' : true
   })
   const [dietaryFilters, setDietaryFiltersState] = useState<string[]>([])
+  const [seasonZone, setSeasonZoneState] = useState<Profile['season_zone']>('reunion')
 
   // Avatar
   const [avatarUploading, setAvatarUploading] = useState(false)
@@ -129,19 +135,17 @@ export default function ProfileScreen({ onBack, onSignOut, isPasswordRecovery = 
     try { await saveDietaryFilters(next) } catch { /* ignore */ }
   }
 
+  const handleSeasonZoneChange = async (zone: Profile['season_zone']) => {
+    setSeasonZoneState(zone)
+    try { await saveSeasonZone(zone) } catch { /* ignore */ }
+  }
+
   const toggleTheme = () => {
     const next = !isDark
     setIsDark(next)
     localStorage.setItem('theme', next ? 'dark' : 'light')
     applyTheme(next)
   }
-
-  useEffect(() => { loadAll() }, [])
-
-  // En mode récupération de mot de passe, ouvrir directement le formulaire
-  useEffect(() => {
-    if (isPasswordRecovery) setShowPwd(true)
-  }, [isPasswordRecovery])
 
   const loadAll = async () => {
     setLoading(true)
@@ -151,6 +155,7 @@ export default function ProfileScreen({ onBack, onSignOut, isPasswordRecovery = 
     ])
     setProfile(p)
     if (p?.dietary_filters) setDietaryFiltersState(p.dietary_filters)
+    if (p?.season_zone) setSeasonZoneState(p.season_zone)
     if (!p) setEditing(true)
     if (user) {
       const [{ count: recipes }, { count: favorites }, { count: pub }, { count: menus }] = await Promise.all([
@@ -164,17 +169,30 @@ export default function ProfileScreen({ onBack, onSignOut, isPasswordRecovery = 
     setLoading(false)
   }
 
+  useEffect(() => { queueMicrotask(() => loadAll()) }, [])
+
+  // En mode récupération de mot de passe, ouvrir directement le formulaire
   useEffect(() => {
-    if (!input || input === profile?.display_name) { setAvailable(null); return }
-    if (input.length < 3 || !PSEUDO_RE.test(input)) { setAvailable(null); return }
-    setChecking(true)
+    if (isPasswordRecovery) queueMicrotask(() => setShowPwd(true))
+  }, [isPasswordRecovery])
+
+  useEffect(() => {
+    if (!input || input === profile?.display_name) {
+      queueMicrotask(() => setAvailable(null))
+      return
+    }
+    if (input.length < 3 || !PSEUDO_RE.test(input)) {
+      queueMicrotask(() => setAvailable(null))
+      return
+    }
+    queueMicrotask(() => setChecking(true))
     const timer = setTimeout(async () => {
       const ok = await isDisplayNameAvailable(input)
       setAvailable(ok)
       setChecking(false)
     }, 500)
     return () => clearTimeout(timer)
-  }, [input])
+  }, [input, profile?.display_name])
 
   const handleSave = async () => {
     setError('')
@@ -416,6 +434,34 @@ export default function ProfileScreen({ onBack, onSignOut, isPasswordRecovery = 
                       background: '#fff', transition: 'left 0.2s', display: 'block',
                     }} />
                   </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Zone de saisonnalité */}
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Zone géographique</div>
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+            Utilisée pour vous indiquer les produits de saison.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+            {SEASON_ZONE_OPTIONS.map((opt, i) => {
+              const active = seasonZone === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => handleSeasonZoneChange(opt.value)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '13px 16px', background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--text)', textAlign: 'left',
+                    borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>{opt.label}</span>
+                  {active && <span style={{ fontSize: 18 }}>✓</span>}
                 </button>
               )
             })}

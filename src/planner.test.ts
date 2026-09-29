@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateSlots, poolForType } from './lib/menuGenerator'
+import { generateSlots, poolForType, withPantryPriority, withConfigDefaults } from './lib/menuGenerator'
 import { scorePantryMatch } from './lib/pantryMatcher'
 import type { Recipe, MenuConfig, MenuSlot, PantryItem } from './types'
 
@@ -37,6 +37,7 @@ const BASE_CONFIG: MenuConfig = {
   desserts: 0,
   tags: [],
   persons: 4,
+  considerSeasonality: true,
 }
 
 // ── poolForType ─────────────────────────────────────────────────────────────
@@ -149,5 +150,85 @@ describe('generateSlots', () => {
   it('pool vide → aucun slot généré', () => {
     const slots = generateSlots([], BASE_CONFIG)
     expect(slots).toHaveLength(0)
+  })
+})
+
+// ── withPantryPriority — départage saisonnier ──────────────────────────────
+// 'ananas' est de saison toute l'année à La Réunion ; 'kiwi' est absent du
+// calendrier réunionnais (toujours faux). Ce choix rend les assertions
+// indépendantes du mois réel d'exécution des tests.
+
+describe('withPantryPriority — départage saisonnier', () => {
+  it('sans garde-manger : les recettes de saison passent systématiquement en tête', () => {
+    const seasonal = [makeRecipeWithIngredients('s1', ['ananas']), makeRecipeWithIngredients('s2', ['ananas'])]
+    const notSeasonal = [makeRecipeWithIngredients('n1', ['kiwi']), makeRecipeWithIngredients('n2', ['kiwi'])]
+    for (let i = 0; i < 15; i++) {
+      const pool = withPantryPriority([...notSeasonal, ...seasonal], undefined, 2, 'reunion')
+      expect(pool.slice(0, 2).map(r => r.id).sort()).toEqual(['s1', 's2'])
+    }
+  })
+
+  it('avec garde-manger et débordement dans la "queue" : le critère saisonnier n\'est plus perdu par le ré-mélange', () => {
+    const pantry: PantryItem[] = [{ id: 'p1', name: 'riz', quantity: 1, unit: '', rayon: '', expires_at: null, created_at: new Date().toISOString() }]
+
+    // 4 recettes à score garde-manger égal (0.5) : 2 de saison, 2 non — plus que
+    // maxHigh (=2 pour slotsForType=2), donc 2 d'entre elles débordent dans la queue.
+    const highSeasonal = [makeRecipeWithIngredients('hs1', ['riz', 'ananas']), makeRecipeWithIngredients('hs2', ['riz', 'ananas'])]
+    const highOther = [makeRecipeWithIngredients('ho1', ['riz', 'kiwi']), makeRecipeWithIngredients('ho2', ['riz', 'kiwi'])]
+    // Une recette hors garde-manger (score 0), de saison, qui doit remonter en tête de la queue.
+    const otherSeasonal = makeRecipeWithIngredients('os1', ['ananas'])
+    const otherNotSeasonal = makeRecipeWithIngredients('on1', ['kiwi'])
+
+    for (let i = 0; i < 15; i++) {
+      const pool = withPantryPriority(
+        [...highOther, ...highSeasonal, otherSeasonal, otherNotSeasonal],
+        pantry, 2, 'reunion'
+      )
+      // head = les 2 premiers (score 0.5, maxHigh=2) — toujours les 2 de saison
+      expect(pool.slice(0, 2).map(r => r.id).sort()).toEqual(['hs1', 'hs2'])
+      // queue = le reste (ho1, ho2 débordés + os1 + on1) — la recette de saison
+      // restante (os1) doit être en tête de cette queue, pas perdue dans le ré-mélange.
+      expect(pool[2].id).toBe('os1')
+    }
+  })
+})
+
+// ── generateSlots — flag considerSeasonality ────────────────────────────────
+
+describe('generateSlots — flag considerSeasonality', () => {
+  const config: MenuConfig = { ...BASE_CONFIG, days: 1, plats: 1 }
+  const seasonal = makeRecipeWithIngredients('s1', ['ananas'])
+  const notSeasonal = makeRecipeWithIngredients('n1', ['kiwi'])
+
+  it('true → la recette de saison est systématiquement choisie face à une seule concurrente hors-saison', () => {
+    for (let i = 0; i < 15; i++) {
+      const slots = generateSlots([seasonal, notSeasonal], config, [], undefined, 'reunion', true)
+      expect(slots[0].recipeId).toBe('s1')
+    }
+  })
+
+  it('false → les deux recettes ont une chance égale d\'être choisies (pas de biais saisonnier mesurable)', () => {
+    const trials = 200
+    let seasonalPicked = 0
+    for (let i = 0; i < trials; i++) {
+      const slots = generateSlots([seasonal, notSeasonal], config, [], undefined, 'reunion', false)
+      if (slots[0].recipeId === 's1') seasonalPicked++
+    }
+    // Sans biais, ~50% de tirages "s1" ; marge large pour éviter toute instabilité statistique.
+    expect(seasonalPicked).toBeGreaterThan(trials * 0.3)
+    expect(seasonalPicked).toBeLessThan(trials * 0.7)
+  })
+
+})
+
+describe('withConfigDefaults', () => {
+  it('un config JSON pré-existant sans considerSeasonality devient true', () => {
+    const legacyConfig = { days: 7, entrees: 0, plats: 7, desserts: 0, tags: [], persons: 4 }
+    expect(withConfigDefaults(legacyConfig).considerSeasonality).toBe(true)
+  })
+
+  it('un config qui a explicitement considerSeasonality: false le conserve', () => {
+    const config: MenuConfig = { ...BASE_CONFIG, considerSeasonality: false }
+    expect(withConfigDefaults(config).considerSeasonality).toBe(false)
   })
 })

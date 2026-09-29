@@ -20,17 +20,20 @@ export default function ShareListModal({ list, isOpen, onClose }: Props) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
 
   useEffect(() => {
-    if (!isOpen || !list) return
-    setShareInput('')
-    setShareError('')
-    setInviteLink('')
-    setShareToast('')
-    getListShares(list.id).then(setSharedWith).catch(console.error)
-    setInviteLinkLoading(true)
-    createInviteLink(list.id)
-      .then(setInviteLink)
-      .catch(console.error)
-      .finally(() => setInviteLinkLoading(false))
+    if (!isOpen || !list?.id) return
+    const listId = list.id
+    queueMicrotask(() => {
+      setShareInput('')
+      setShareError('')
+      setInviteLink('')
+      setShareToast('')
+      getListShares(listId).then(setSharedWith).catch(console.error)
+      setInviteLinkLoading(true)
+      createInviteLink(listId)
+        .then(setInviteLink)
+        .catch(console.error)
+        .finally(() => setInviteLinkLoading(false))
+    })
   }, [isOpen, list?.id])
 
   if (!isOpen || !list) return null

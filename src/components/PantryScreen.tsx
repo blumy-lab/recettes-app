@@ -39,11 +39,13 @@ export default function PantryScreen() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { queueMicrotask(() => load()) }, [])
 
   useEffect(() => {
-    if (name.length >= 2) setSuggestions(searchIngredients(name).slice(0, 5))
-    else setSuggestions([])
+    queueMicrotask(() => {
+      if (name.length >= 2) setSuggestions(searchIngredients(name).slice(0, 5))
+      else setSuggestions([])
+    })
   }, [name])
 
   const handleAdd = async () => {

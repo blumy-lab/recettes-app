@@ -52,20 +52,25 @@ export default function CookingMode({ recipe, onExit }: Props) {
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
     intervalRef.current = null
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset lié au clearInterval ci-dessus, pas déplaçable en dehors d'un effet
     setTimerState('idle')
     setTimeLeft(stepDuration ?? 0)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep])
 
-  // ── Detect timer reaching zero ─────────────────────────────────────────────
-  useEffect(() => {
-    if (timeLeft === 0 && timerState === 'running') {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-      intervalRef.current = null
-      setTimerState('done')
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200])
-    }
-  }, [timeLeft, timerState])
+  // ── Tick partagé par startTimer/resumeTimer : décrémente et détecte la fin ──
+  const tick = () => {
+    setTimeLeft(prev => {
+      const next = Math.max(0, prev - 1)
+      if (next === 0) {
+        if (intervalRef.current) clearInterval(intervalRef.current)
+        intervalRef.current = null
+        setTimerState('done')
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200])
+      }
+      return next
+    })
+  }
 
   // ── Interval cleanup on unmount ────────────────────────────────────────────
   useEffect(() => {
@@ -78,9 +83,7 @@ export default function CookingMode({ recipe, onExit }: Props) {
     const startFrom = from ?? stepDuration ?? 0
     setTimeLeft(startFrom)
     setTimerState('running')
-    intervalRef.current = setInterval(() => {
-      setTimeLeft(prev => Math.max(0, prev - 1))
-    }, 1000)
+    intervalRef.current = setInterval(tick, 1000)
   }
 
   const pauseTimer = () => {
@@ -91,9 +94,7 @@ export default function CookingMode({ recipe, onExit }: Props) {
 
   const resumeTimer = () => {
     setTimerState('running')
-    intervalRef.current = setInterval(() => {
-      setTimeLeft(prev => Math.max(0, prev - 1))
-    }, 1000)
+    intervalRef.current = setInterval(tick, 1000)
   }
 
   // ── Step navigation ────────────────────────────────────────────────────────

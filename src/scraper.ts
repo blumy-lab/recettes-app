@@ -80,7 +80,7 @@ function parseIngredientText(text: string): Ingredient {
     }
   }
   // No unit found — try to extract a leading number only
-  const numMatch = text.match(/^([\d\s\/.,½¼¾⅓⅔]+)\s+(.+)$/)
+  const numMatch = text.match(/^([\d\s/.,½¼¾⅓⅔]+)\s+(.+)$/)
   if (numMatch) {
     return {
       id: generateId(),

@@ -1,16 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { Recipe } from '../types'
 import { getPublicRecipes, getFavoriteIds, getFavoriteRecipes, toggleFavorite } from '../store'
 import { FILTER_CHIPS, getTagDef } from '../tags'
+import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
 
 type SortMode = 'recent' | 'az' | 'duration' | 'favorites' | 'popular'
 
 interface Props {
   onSelect: (recipe: Recipe) => void
   dietaryFilters?: string[]
+  seasonZone?: SeasonZone | null
 }
 
-export default function ExploreScreen({ onSelect, dietaryFilters = [] }: Props) {
+export default function ExploreScreen({ onSelect, dietaryFilters = [], seasonZone = null }: Props) {
   const [publicRecipes, setPublicRecipes] = useState<Recipe[]>([])
   const [favoriteRecipes, setFavoriteRecipes] = useState<Recipe[]>([])
   const [loading, setLoading] = useState(true)
@@ -70,7 +72,7 @@ export default function ExploreScreen({ onSelect, dietaryFilters = [] }: Props) 
 
   // Charge la page 0 une fois les favoriteIds connus, puis à chaque changement de recherche/filtres
   useEffect(() => {
-    if (initDone && tab === 'all') fetchPage(0, false)
+    if (initDone && tab === 'all') queueMicrotask(() => fetchPage(0, false))
   }, [fetchPage, tab, initDone])
 
   const toggleTagFilter = (tag: string) => {
@@ -115,6 +117,16 @@ export default function ExploreScreen({ onSelect, dietaryFilters = [] }: Props) 
   })
 
   const displayList = tab === 'favorites' ? favoritesFiltered : publicSorted
+
+  const seasonalIds = useMemo(() => {
+    if (!seasonZone) return null
+    const month = new Date().getMonth() + 1
+    const ids = new Set<string>()
+    for (const r of [...publicRecipes, ...favoriteRecipes]) {
+      if (isRecipeInSeason(r.ingredients, seasonZone, month)) ids.add(r.id)
+    }
+    return ids
+  }, [publicRecipes, favoriteRecipes, seasonZone])
 
   return (
     <div className="page explore-page">
@@ -202,6 +214,7 @@ export default function ExploreScreen({ onSelect, dietaryFilters = [] }: Props) 
                       {recipe.prep_time && <span>⏱ {recipe.prep_time} min</span>}
                       {recipe.servings && <span>👥 {recipe.servings}</span>}
                       <span>{recipe.ingredients.length} ingr.</span>
+                      {seasonalIds?.has(recipe.id) && <span>🌱 De saison</span>}
                     </div>
                   </div>
                   <button

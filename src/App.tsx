@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { AuthProvider } from './contexts/AuthContext'
+import { useAuth } from './hooks/useAuth'
 import { HouseholdsProvider } from './hooks/useHouseholds'
-import { ConfirmProvider } from './hooks/useConfirm'
+import { ConfirmProvider } from './hooks/ConfirmProvider'
 import AuthScreen from './components/AuthScreen'
 import RecipeList from './components/RecipeList'
 import RecipeDetail from './components/RecipeDetail'
@@ -13,22 +14,27 @@ import ProfileScreen from './components/ProfileScreen'
 import MealPlanner from './components/MealPlanner'
 import ExploreScreen from './components/ExploreScreen'
 import PantryScreen from './components/PantryScreen'
-import type { Recipe } from './types'
+import PublicRecipeView from './components/PublicRecipeView'
+import type { Recipe, Profile } from './types'
 import { getRecipes, acceptInvite, setActiveListId, getProfile, acceptMenuInvite } from './store'
 import { supabase } from './lib/supabase'
 import { getPendingCount } from './lib/offlineQueue'
+import { isValidRecipeId } from './lib/publicRecipeUrl'
 import './App.css'
 
 type View = 'recipes' | 'shopping' | 'planner' | 'explore' | 'pantry' | 'import' | 'import-photo' | 'create' | 'edit' | 'detail' | 'detail-public' | 'profile'
 
 function AppContent() {
   const { user, loading, signOut } = useAuth()
-  const [view, setView] = useState<View>('recipes')
+  const [view, setView] = useState<View>(() =>
+    new URLSearchParams(window.location.search).get('url') ? 'import' : 'recipes'
+  )
   const [refreshKey, setRefreshKey] = useState(0)
   const [plannerRecipes, setPlannerRecipes] = useState<Recipe[]>([])
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
   const [dietaryFilters, setDietaryFilters] = useState<string[]>([])
+  const [seasonZone, setSeasonZone] = useState<Profile['season_zone'] | null>(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
   const [pendingMenuId, setPendingMenuId] = useState<string | null>(null)
@@ -77,7 +83,7 @@ function AppContent() {
     if ((view === 'planner' || (view === 'detail' && returnView === 'planner')) && plannerRecipes.length === 0) {
       getRecipes().then(({ data }) => setPlannerRecipes(data)).catch(console.error)
     }
-  }, [view, returnView])
+  }, [view, returnView, plannerRecipes.length])
 
   // Capturer les tokens d'invitation AVANT la connexion
   useEffect(() => {
@@ -97,6 +103,7 @@ function AppContent() {
     // Charger les préférences alimentaires
     getProfile().then((p) => {
       if (p?.dietary_filters) setDietaryFilters(p.dietary_filters)
+      if (p) setSeasonZone(p.season_zone)
     })
 
     // Accepter une invitation de liste en attente
@@ -128,7 +135,6 @@ function AppContent() {
     if (sharedUrl) {
       window.history.replaceState({}, '', '/')
       sessionStorage.setItem('shared_url', sharedUrl)
-      setView('import')
     }
 
     // Temps réel — synchronisation des recettes du foyer
@@ -187,6 +193,7 @@ function AppContent() {
           onGoToProfile={() => setView('profile')}
           dietaryFilters={dietaryFilters}
           refreshKey={refreshKey}
+          seasonZone={seasonZone}
         />
       )}
       {view === 'detail' && selectedRecipe && (
@@ -195,6 +202,7 @@ function AppContent() {
           onBack={goBack}
           onEdit={() => setView('edit')}
           onRefresh={triggerRefresh}
+          seasonZone={seasonZone}
         />
       )}
 
@@ -210,6 +218,7 @@ function AppContent() {
         <ExploreScreen
           onSelect={(recipe) => { setSelectedRecipe(recipe); setView('detail-public') }}
           dietaryFilters={dietaryFilters}
+          seasonZone={seasonZone}
         />
       )}
       {view === 'pantry' && <PantryScreen />}
@@ -221,6 +230,7 @@ function AppContent() {
           onRefresh={triggerRefresh}
           isPublicView={true}
           onSaved={() => { triggerRefresh(); setView('recipes') }}
+          seasonZone={seasonZone}
         />
       )}
       {view === 'profile' && (
@@ -241,6 +251,7 @@ function AppContent() {
             defaultDietaryFilters={dietaryFilters}
             pendingMenuId={pendingMenuId}
             onMenuOpened={() => setPendingMenuId(null)}
+            seasonZone={seasonZone}
           />
         </div>
       )}
@@ -297,6 +308,11 @@ function AppContent() {
 }
 
 export default function App() {
+  const publicRecipeId = new URLSearchParams(window.location.search).get('public_recipe')
+  if (publicRecipeId && isValidRecipeId(publicRecipeId)) {
+    return <PublicRecipeView recipeId={publicRecipeId} />
+  }
+
   return (
     <AuthProvider>
       <HouseholdsProvider>

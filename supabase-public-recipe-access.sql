@@ -1,0 +1,24 @@
+-- Accès anonyme aux recettes publiques — constat, pas de migration
+--
+-- Avant d'ajouter une policy pour le rôle anon, vérification des policies
+-- existantes sur `recipes` (dashboard Supabase, requête sur pg_policies) :
+--
+--   "Users can view recipes" (SELECT, rôle "public" — donc TOUT rôle,
+--   y compris anon, en hérite) :
+--     (auth.uid() = user_id)
+--     OR (household_id IN (SELECT get_my_household_ids()))
+--     OR (is_public = true AND moderation_status = 'approved')
+--
+-- Le rôle Postgres "public" est le pseudo-rôle dont hérite systématiquement
+-- anon. La troisième branche (is_public + approved) ne dépend d'aucune
+-- fonction liée à auth.uid() : elle s'évalue à true pour n'importe quel
+-- rôle, y compris un visiteur non authentifié.
+--
+-- Vérifié empiriquement (requête REST directe avec la seule clé anon,
+-- sans session) : une recette publique et approuvée est bien lisible sans
+-- authentification, avec le code d'accès actuel — aucune policy
+-- supplémentaire n'est nécessaire pour la page de consultation publique.
+--
+-- Rien n'est donc exécuté par ce fichier ; il documente le constat pour que
+-- la prochaine personne qui touche à recipes/RLS ne recrée pas une policy
+-- redondante avec "Users can view recipes".

@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 import { render, type RenderOptions } from '@testing-library/react'
 import { AuthProvider } from './contexts/AuthContext'
 import { HouseholdsProvider } from './hooks/useHouseholds'
-import { ConfirmProvider } from './hooks/useConfirm'
+import { ConfirmProvider } from './hooks/ConfirmProvider'
 
 function AllProviders({ children }: { children: ReactNode }) {
   return (
