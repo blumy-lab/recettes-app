@@ -15,10 +15,13 @@ async function callProxy(action: string, payload: Record<string, unknown>): Prom
   })
   if (error) {
     let message = 'Erreur du proxy Gemini'
-    try {
-      const parsed = JSON.parse(error.message)
-      if (parsed?.error) message = parsed.error
-    } catch { /* ignore */ }
+    const context = (error as { context?: Response }).context
+    if (context && typeof context.json === 'function') {
+      try {
+        const parsed = await context.json()
+        if (parsed?.error) message = parsed.error
+      } catch { /* corps non-JSON ou déjà consommé */ }
+    }
     throw new Error(message)
   }
   if (data?.error) throw new Error(data.error)
