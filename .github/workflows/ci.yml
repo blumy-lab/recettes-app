@@ -3,20 +3,17 @@
 # vers la branche principale. Objectif : détecter les régressions avant
 # tout déploiement (le déploiement lui-même reste manuel).
 #
-# Secrets GitHub à configurer manuellement avant que l'étape de build ait
-# une configuration réaliste (Settings → Secrets and variables → Actions →
-# New repository secret) — voir les noms de variables dans src/lib/supabase.ts,
-# src/hooks/useHouseholds.ts, src/scraper.ts, src/lib/printRecipe.ts,
-# src/components/AuthScreen.tsx :
+# Secrets GitHub à configurer avant que CI passe réellement au vert
+# (Settings → Secrets and variables → Actions → New repository secret) :
 #   VITE_SUPABASE_URL       URL du projet Supabase (ex: https://xxxx.supabase.co)
 #   VITE_SUPABASE_ANON_KEY  Clé anonyme publique Supabase (jamais la clé service_role)
 #   VITE_APP_URL            URL de déploiement de l'app
 #
-# Vérifié localement : `npm run build` compile avec succès même sans ces
-# variables (elles ne sont lues qu'au runtime par le client Supabase, pas
-# au moment de la compilation) — elles sont injectées ici uniquement pour
-# que le build reflète la configuration réelle, pas parce que le build en
-# a strictement besoin.
+# Définies au niveau du JOB (pas juste sur l'étape build) car
+# `src/lib/supabase.ts` appelle createClient() dès l'import du module —
+# donc `vitest run` exécute ce code et plante avec "supabaseUrl is
+# required" si ces variables sont absentes à ce moment-là, même si
+# `npm run build` (compilation statique seule) fonctionnerait sans elles.
 #
 # Ne jamais mettre la clé GEMINI_API_KEY ici : elle n'est utilisée que
 # côté serveur (secret Supabase), jamais par le build front.
@@ -33,6 +30,10 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,7 +49,3 @@ jobs:
       - run: npx vitest run
 
       - run: npm run build
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
