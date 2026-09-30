@@ -43,6 +43,27 @@ function consolidate(slots: MenuSlot[], recipes: Recipe[], persons: number): Con
   return Array.from(map.values()).sort((a, b) => a.rayon.localeCompare(b.rayon) || a.name.localeCompare(b.name))
 }
 
+/* ── Nutrition aggregation ── */
+// nutrition_calories/proteins/fat/carbs are stored PER PORTION (one person, one serving) —
+// summing them across a day/week already gives the per-person total, independent of `persons`
+// (which only scales ingredient quantities for the shopping list, not the nutrition math).
+
+interface NutritionTotals { calories: number; proteins: number; fat: number; carbs: number; countWithData: number; countTotal: number }
+
+function emptyNutritionTotals(): NutritionTotals {
+  return { calories: 0, proteins: 0, fat: 0, carbs: 0, countWithData: 0, countTotal: 0 }
+}
+
+function addSlotNutrition(totals: NutritionTotals, recipe: Recipe | undefined) {
+  totals.countTotal++
+  if (recipe?.nutrition_calories == null) return
+  totals.calories += recipe.nutrition_calories
+  totals.proteins += recipe.nutrition_proteins ?? 0
+  totals.fat += recipe.nutrition_fat ?? 0
+  totals.carbs += recipe.nutrition_carbs ?? 0
+  totals.countWithData++
+}
+
 const SEASON_ZONE_LABELS: Record<SeasonZone, string> = {
   reunion: 'La Réunion',
   metropole: 'France métropolitaine',
@@ -124,6 +145,19 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
     const ids = new Set(recipes.map(r => r.id))
     return [...recipes, ...publicRecipes.filter(r => !ids.has(r.id))]
   }, [recipes, publicRecipes])
+  const recipesById = useMemo(() => new Map(allRecipes.map(r => [r.id, r])), [allRecipes])
+  const nutritionTotals = useMemo(() => {
+    const byDay = new Map<number, NutritionTotals>()
+    const week = emptyNutritionTotals()
+    for (const slot of slots) {
+      if (!byDay.has(slot.day)) byDay.set(slot.day, emptyNutritionTotals())
+      const dayTotals = byDay.get(slot.day)!
+      const recipe = recipesById.get(slot.recipeId)
+      addSlotNutrition(dayTotals, recipe)
+      addSlotNutrition(week, recipe)
+    }
+    return { byDay, week }
+  }, [slots, recipesById])
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [loadingMenus, setLoadingMenus] = useState(true)
@@ -615,11 +649,37 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
         </button>
       </div>
 
+      {nutritionTotals.week.countWithData > 0 && (
+        <div style={{ margin: '12px 16px 0', padding: '12px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>🥗 Bilan nutritionnel — par personne</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 13 }}>
+            <span>🔥 {Math.round(nutritionTotals.week.calories)} kcal</span>
+            <span>🥩 {Math.round(nutritionTotals.week.proteins)}g prot.</span>
+            <span>🧈 {Math.round(nutritionTotals.week.fat)}g lip.</span>
+            <span>🌾 {Math.round(nutritionTotals.week.carbs)}g gluc.</span>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6 }}>
+            Sur {nutritionTotals.byDay.size} jour{nutritionTotals.byDay.size > 1 ? 's' : ''}
+            {nutritionTotals.byDay.size > 0 && ` · soit ~${Math.round(nutritionTotals.week.calories / nutritionTotals.byDay.size)} kcal/jour/pers.`}
+            {nutritionTotals.week.countTotal > nutritionTotals.week.countWithData &&
+              ` · ${nutritionTotals.week.countWithData}/${nutritionTotals.week.countTotal} repas avec données`}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+            Total pour {config.persons} personne{config.persons > 1 ? 's' : ''} : ~{Math.round(nutritionTotals.week.calories * config.persons)} kcal
+          </div>
+        </div>
+      )}
+
       <div className="detail-content" style={{ paddingTop: 12 }}>
         {days.map(day => (
           <div key={day} style={{ marginBottom: 14, borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
-            <div style={{ background: 'var(--surface-2, var(--surface))', padding: '8px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>
-              Jour {day}
+            <div style={{ background: 'var(--surface-2, var(--surface))', padding: '8px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Jour {day}</span>
+              {(nutritionTotals.byDay.get(day)?.countWithData ?? 0) > 0 && (
+                <span style={{ fontWeight: 500, fontSize: 11, color: 'var(--text-tertiary)' }}>
+                  🔥 {Math.round(nutritionTotals.byDay.get(day)!.calories)} kcal/pers.
+                </span>
+              )}
             </div>
             {slots.filter(s => s.day === day).map((slot, i) => {
               const sameTypeOnDay = slots.filter(s => s.day === day && s.mealType === slot.mealType).length
