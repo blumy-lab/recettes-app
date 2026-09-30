@@ -4,6 +4,7 @@ import { getRecipes, deleteRecipe, getProfile } from '../store'
 import { useConfirm } from '../hooks/useConfirm'
 import { FILTER_CHIPS, getTagDef } from '../tags'
 import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
+import { isHealthyRecipe } from '../lib/healthyFilter'
 
 type SortMode = 'recent' | 'az' | 'duration' | 'favorites' | 'popular'
 
@@ -37,6 +38,7 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
     } catch { return dietaryFilters }
   })
   const [sortMode, setSortMode] = useState<SortMode>('recent')
+  const [healthyOnly, setHealthyOnly] = useState(false)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -113,8 +115,9 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
     return ids
   }, [recipes, seasonZone])
 
-  const isEmpty = !loading && recipes.length === 0 && !debouncedSearch.trim() && activeTagFilters.length === 0
-  const noResults = !loading && sorted.length === 0 && (!!debouncedSearch.trim() || activeTagFilters.length > 0)
+  const filtered = healthyOnly ? sorted.filter(isHealthyRecipe) : sorted
+  const isEmpty = !loading && recipes.length === 0 && !debouncedSearch.trim() && activeTagFilters.length === 0 && !healthyOnly
+  const noResults = !loading && filtered.length === 0 && (!!debouncedSearch.trim() || activeTagFilters.length > 0 || healthyOnly)
 
   return (
     <div className="page">
@@ -171,6 +174,10 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
                 </button>
               )
             })}
+            <button
+              className={`filter-chip${healthyOnly ? ' active' : ''}`}
+              onClick={() => setHealthyOnly(v => !v)}
+            >🥗 Sain & léger</button>
           </div>
           <div className="sort-bar">
             <span className="sort-label">Trier :</span>
@@ -213,14 +220,14 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
           <p className="hint">
             {search ? `Aucune recette ne correspond à « ${search} »` : 'Aucune recette ne correspond à ces filtres'}
           </p>
-          <button className="btn-outline" onClick={() => { setSearch(''); setActiveTagFilters([]); localStorage.setItem('recipeTagFilters', '[]') }}>
+          <button className="btn-outline" onClick={() => { setSearch(''); setActiveTagFilters([]); setHealthyOnly(false); localStorage.setItem('recipeTagFilters', '[]') }}>
             Effacer les filtres
           </button>
         </div>
       ) : (
         <>
           <ul className="recipe-list">
-            {sorted.map(recipe => (
+            {filtered.map(recipe => (
               <li key={recipe.id} className="recipe-card" onClick={() => onSelect(recipe)}>
                 {recipe.image_url
                   ? <img src={recipe.image_url} alt={recipe.title} className="recipe-thumb" />
@@ -234,6 +241,7 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
                     {recipe.servings && <span>👥 {recipe.servings} pers.</span>}
                     <span>🥄 {recipe.ingredients.length} ingr.</span>
                     {seasonalIds?.has(recipe.id) && <span>🌱 De saison</span>}
+                    {isHealthyRecipe(recipe) && <span>🥗 Sain</span>}
                   </div>
                 </div>
                 <button className="btn-icon delete" onClick={(e) => handleDelete(e, recipe.id)}>🗑</button>

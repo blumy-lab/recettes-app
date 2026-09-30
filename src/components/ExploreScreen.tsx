@@ -3,6 +3,7 @@ import type { Recipe } from '../types'
 import { getPublicRecipes, getFavoriteIds, getFavoriteRecipes, toggleFavorite } from '../store'
 import { FILTER_CHIPS, getTagDef } from '../tags'
 import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
+import { isHealthyRecipe } from '../lib/healthyFilter'
 
 type SortMode = 'recent' | 'az' | 'duration' | 'favorites' | 'popular'
 
@@ -24,6 +25,7 @@ export default function ExploreScreen({ onSelect, dietaryFilters = [], seasonZon
   const [tab, setTab] = useState<'all' | 'favorites'>('all')
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>(dietaryFilters)
   const [sortMode, setSortMode] = useState<SortMode>('recent')
+  const [healthyOnly, setHealthyOnly] = useState(false)
   // favoriteIds chargés une fois au montage, accessibles via ref pour éviter de déclencher un re-fetch
   const [initDone, setInitDone] = useState(false)
   const favoriteIdsRef = useRef<string[]>([])
@@ -116,7 +118,8 @@ export default function ExploreScreen({ onSelect, dietaryFilters = [], seasonZon
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 
-  const displayList = tab === 'favorites' ? favoritesFiltered : publicSorted
+  const baseList = tab === 'favorites' ? favoritesFiltered : publicSorted
+  const displayList = healthyOnly ? baseList.filter(isHealthyRecipe) : baseList
 
   const seasonalIds = useMemo(() => {
     if (!seasonZone) return null
@@ -168,6 +171,10 @@ export default function ExploreScreen({ onSelect, dietaryFilters = [], seasonZon
               </button>
             )
           })}
+          <button
+            className={`filter-chip${healthyOnly ? ' active' : ''}`}
+            onClick={() => setHealthyOnly(v => !v)}
+          >🥗 Sain & léger</button>
         </div>
 
         <div className="sort-bar">
@@ -215,6 +222,7 @@ export default function ExploreScreen({ onSelect, dietaryFilters = [], seasonZon
                       {recipe.servings && <span>👥 {recipe.servings}</span>}
                       <span>{recipe.ingredients.length} ingr.</span>
                       {seasonalIds?.has(recipe.id) && <span>🌱 De saison</span>}
+                      {isHealthyRecipe(recipe) && <span>🥗 Sain</span>}
                     </div>
                   </div>
                   <button
