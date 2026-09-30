@@ -179,6 +179,17 @@ export async function getPublicRecipes(
   }
 }
 
+// Récupère des recettes précises par leurs ids, quel que soit leur rang de
+// récence — contrairement à getRecipes/getPublicRecipes (paginées), pour
+// résoudre de façon fiable les recettes déjà choisies dans un menu existant
+// (RLS s'applique normalement : own + foyer + public approuvée).
+export async function getRecipesByIds(ids: string[]): Promise<Recipe[]> {
+  if (ids.length === 0) return []
+  const { data, error } = await supabase.from('recipes').select('*').in('id', ids)
+  if (error) throw error
+  return (data || []).map(toRecipe)
+}
+
 export async function getPublicRecipeById(id: string): Promise<Recipe | null> {
   const { data: row, error } = await supabase
     .from('recipes')

@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { Recipe, MenuMealType, MenuConfig, MenuSlot, SavedMenu, PantryItem } from '../types'
 import {
-  getPublicRecipes, addIngredientsToShoppingList, getActiveListId,
+  getPublicRecipes, getRecipesByIds, addIngredientsToShoppingList, getActiveListId,
   createMenuInviteLink, shareMenuWithPseudo, getMenuShares, removeMenuShare,
   updateMenuSlot, replaceMenuSlots, getPantryItems,
 } from '../store'
@@ -82,16 +82,24 @@ async function fetchMenus(): Promise<SavedMenu[]> {
   }))
 }
 
-async function fetchMenuItems(menuId: string, allRecipes: Recipe[]): Promise<MenuSlot[]> {
+// Résout les recettes du menu par leurs ids précis (getRecipesByIds), jamais
+// via un pool local plafonné : un menu sauvegardé reste donc résoluble même
+// si ses recettes sont sorties du lot des N plus récentes.
+async function fetchMenuItems(menuId: string): Promise<{ slots: MenuSlot[]; recipes: Recipe[] }> {
   const { data } = await supabase.from('menu_items').select('*').eq('menu_id', menuId).order('day_number').order('position')
-  return (data || []).map(r => ({
+  const rows = data || []
+  const recipeIds = [...new Set(rows.map(r => r.recipe_id as string))]
+  const recipes = await getRecipesByIds(recipeIds)
+  const byId = new Map(recipes.map(r => [r.id, r]))
+  const slots = rows.map(r => ({
     day: r.day_number,
     mealType: r.meal_type as MenuMealType,
     position: r.position,
     recipeId: r.recipe_id,
-    recipeTitle: allRecipes.find(x => x.id === r.recipe_id)?.title || '',
+    recipeTitle: byId.get(r.recipe_id as string)?.title || '',
     locked: r.locked,
   }))
+  return { slots, recipes }
 }
 
 async function persistMenu(name: string, config: MenuConfig, slots: MenuSlot[]): Promise<string> {
@@ -141,10 +149,28 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
   const [menuName, setMenuName] = useState('')
   const [savedMenus, setSavedMenus] = useState<SavedMenu[]>([])
   const [publicRecipes, setPublicRecipes] = useState<Recipe[]>([])
+  // Recettes découvertes hors du pool des publiques récentes (menu ouvert,
+  // recherche dans le sélecteur) — fusionnées ici pour rester résolubles
+  // (titre, nutrition, ingrédients) même une fois hors du top des récentes.
+  const [extraRecipes, setExtraRecipes] = useState<Recipe[]>([])
   const allRecipes = useMemo(() => {
-    const ids = new Set(recipes.map(r => r.id))
-    return [...recipes, ...publicRecipes.filter(r => !ids.has(r.id))]
-  }, [recipes, publicRecipes])
+    const ids = new Set<string>()
+    const merged: Recipe[] = []
+    for (const list of [recipes, publicRecipes, extraRecipes]) {
+      for (const r of list) {
+        if (!ids.has(r.id)) { ids.add(r.id); merged.push(r) }
+      }
+    }
+    return merged
+  }, [recipes, publicRecipes, extraRecipes])
+  const mergeExtraRecipes = (found: Recipe[]) => {
+    if (found.length === 0) return
+    setExtraRecipes(prev => {
+      const known = new Set([...recipes.map(r => r.id), ...publicRecipes.map(r => r.id), ...prev.map(r => r.id)])
+      const additions = found.filter(r => !known.has(r.id))
+      return additions.length ? [...prev, ...additions] : prev
+    })
+  }
   const recipesById = useMemo(() => new Map(allRecipes.map(r => [r.id, r])), [allRecipes])
   const nutritionTotals = useMemo(() => {
     const byDay = new Map<number, NutritionTotals>()
@@ -178,10 +204,29 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
   // Recipe picker
   const [pickerSlot, setPickerSlot] = useState<MenuSlot | null>(null)
   const [pickerSearch, setPickerSearch] = useState('')
+  const [pickerResults, setPickerResults] = useState<Recipe[]>([])
+  const [pickerLoading, setPickerLoading] = useState(false)
   const [pantryItems, setPantryItems] = useState<PantryItem[]>([])
-  const allRecipesRef = useRef(allRecipes)
 
-  useEffect(() => { allRecipesRef.current = allRecipes }, [allRecipes])
+  // Le picker cherche côté serveur (public) au lieu de filtrer le pool local
+  // plafonné à 200 : sans ça une recette publique plus ancienne est invisible.
+  useEffect(() => {
+    if (!pickerSlot) return
+    let cancelled = false
+    queueMicrotask(() => setPickerLoading(true))
+    const term = pickerSearch.trim()
+    const localMatches = recipes.filter(r => !term || r.title.toLowerCase().includes(term.toLowerCase()))
+    const timer = setTimeout(() => {
+      const searchPublic = term ? getPublicRecipes({ search: term }) : Promise.resolve({ data: publicRecipes, hasMore: false })
+      searchPublic.then(({ data: pub }) => {
+        if (cancelled) return
+        const ids = new Set(localMatches.map(r => r.id))
+        setPickerResults([...localMatches, ...pub.filter(r => !ids.has(r.id))])
+        setPickerLoading(false)
+      }).catch(() => { if (!cancelled) setPickerLoading(false) })
+    }, term ? 300 : 0)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [pickerSlot, pickerSearch, recipes, publicRecipes])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUserId(user.id) })
@@ -196,11 +241,13 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
     const channel = supabase
       .channel(`menu_items_${savedMenuId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items', filter: `menu_id=eq.${savedMenuId}` }, async () => {
-        const items = await fetchMenuItems(savedMenuId, allRecipesRef.current)
+        const { slots: items, recipes: fetched } = await fetchMenuItems(savedMenuId)
         setSlots(items)
+        mergeExtraRecipes(fetched)
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ne resouscrire qu'au changement de savedMenuId, pas à chaque merge de recettes
   }, [savedMenuId])
 
   // Auto-open a menu when arriving from an invite link
@@ -208,8 +255,9 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
     if (!pendingMenuId || loadingMenus) return
     const menu = savedMenus.find(m => m.id === pendingMenuId)
     if (menu) {
-      fetchMenuItems(menu.id, allRecipesRef.current).then(items => {
+      fetchMenuItems(menu.id).then(({ slots: items, recipes: fetched }) => {
         setSlots(items)
+        mergeExtraRecipes(fetched)
         setConfig(withConfigDefaults(menu.config))
         setMenuName(menu.name)
         setSavedMenuId(menu.id)
@@ -254,6 +302,7 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
   const handlePickRecipe = (slot: MenuSlot, recipe: Recipe) => {
     const newSlot = { ...slot, recipeId: recipe.id, recipeTitle: recipe.title, locked: false }
     setSlots(prev => prev.map(s => (s.day === slot.day && s.mealType === slot.mealType && s.position === slot.position) ? newSlot : s))
+    mergeExtraRecipes([recipe])
     if (savedMenuId) {
       updateMenuSlot(savedMenuId, newSlot).catch(e => console.error('Pick recipe persist error:', e))
     }
@@ -294,8 +343,9 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
   }
 
   const handleOpenSaved = async (menu: SavedMenu) => {
-    const items = await fetchMenuItems(menu.id, allRecipes)
+    const { slots: items, recipes: fetched } = await fetchMenuItems(menu.id)
     setSlots(items)
+    mergeExtraRecipes(fetched)
     setConfig(withConfigDefaults(menu.config))
     setMenuName(menu.name)
     setSavedMenuId(menu.id)
@@ -740,21 +790,22 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
               autoFocus
             />
             <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {allRecipes
-                .filter(r => !pickerSearch || r.title.toLowerCase().includes(pickerSearch.toLowerCase()))
-                .map(r => (
-                  <button
-                    key={r.id}
-                    style={{ textAlign: 'left', padding: '10px 12px', background: r.id === pickerSlot.recipeId ? 'var(--primary-bg, oklch(0.95 0.04 75))' : 'var(--surface)', border: `1px solid ${r.id === pickerSlot.recipeId ? 'var(--primary)' : 'var(--border)'}`, borderRadius: 8, fontSize: 14, cursor: 'pointer', color: 'var(--text-primary)' }}
-                    onClick={() => handlePickRecipe(pickerSlot, r)}
-                  >
-                    <div style={{ fontWeight: r.id === pickerSlot.recipeId ? 600 : 400 }}>{r.title}</div>
-                    {r.tags && r.tags.length > 0 && (
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{r.tags.slice(0, 4).join(' · ')}</div>
-                    )}
-                  </button>
-                ))}
-              {allRecipes.filter(r => !pickerSearch || r.title.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && (
+              {pickerResults.map(r => (
+                <button
+                  key={r.id}
+                  style={{ textAlign: 'left', padding: '10px 12px', background: r.id === pickerSlot.recipeId ? 'var(--primary-bg, oklch(0.95 0.04 75))' : 'var(--surface)', border: `1px solid ${r.id === pickerSlot.recipeId ? 'var(--primary)' : 'var(--border)'}`, borderRadius: 8, fontSize: 14, cursor: 'pointer', color: 'var(--text-primary)' }}
+                  onClick={() => handlePickRecipe(pickerSlot, r)}
+                >
+                  <div style={{ fontWeight: r.id === pickerSlot.recipeId ? 600 : 400 }}>{r.title}</div>
+                  {r.tags && r.tags.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{r.tags.slice(0, 4).join(' · ')}</div>
+                  )}
+                </button>
+              ))}
+              {pickerLoading && (
+                <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', marginTop: 20 }}><span className="spinner" style={{ width: 16, height: 16, display: 'inline-block' }} /></p>
+              )}
+              {!pickerLoading && pickerResults.length === 0 && (
                 <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', marginTop: 20 }}>Aucune recette trouvée</p>
               )}
             </div>
