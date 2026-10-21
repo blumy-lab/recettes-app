@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import type { Recipe } from '../types'
 import { getRecipes, deleteRecipe, getProfile } from '../store'
 import { useConfirm } from '../hooks/useConfirm'
@@ -6,6 +6,7 @@ import { FILTER_CHIPS, getTagDef } from '../tags'
 import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
 import { isHealthyRecipe } from '../lib/healthyFilter'
 import { usePersistentState } from '../hooks/usePersistentState'
+import { readPersisted, writePersisted } from '../lib/persistedState'
 
 type SortMode = 'recent' | 'az' | 'duration' | 'favorites' | 'popular'
 
@@ -13,6 +14,14 @@ const SORT_MODES: SortMode[] = ['recent', 'az', 'duration', 'favorites', 'popula
 const parseSortMode = (raw: unknown) => SORT_MODES.find(m => m === raw)
 const parseString = (raw: unknown) => (typeof raw === 'string' ? raw : undefined)
 const parseBoolean = (raw: unknown) => (typeof raw === 'boolean' ? raw : undefined)
+
+// Position dans la liste : défilement + nombre de pages « Charger plus » déjà affichées.
+interface ScrollSpot { y: number; page: number }
+const parseScrollSpot = (raw: unknown): ScrollSpot | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const { y, page } = raw as Record<string, unknown>
+  return typeof y === 'number' && typeof page === 'number' && y >= 0 && page >= 0 ? { y, page } : undefined
+}
 
 interface Props {
   onSelect: (recipe: Recipe) => void
@@ -74,13 +83,52 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
       setRecipes(prev => append ? [...prev, ...result.data] : result.data)
       setHasMore(result.hasMore)
       setPage(pageNum)
+      return result.hasMore
     } catch (e) {
       console.error(e)
+      return false
     } finally {
       setLoading(false)
       setLoadingMore(false)
     }
   }, [debouncedSearch, activeTagFilters, serverSort])
+
+  // Retrouve sa place dans la liste en revenant d'une fiche ou après une actualisation
+  const pendingSpot = useRef<ScrollSpot | undefined>(undefined)
+  const restoringScroll = useRef(false)
+  const pageRef = useRef(0)
+  useEffect(() => { pageRef.current = page }, [page])
+
+  // useLayoutEffect : le suivi s'arrête avant que l'écran suivant ne fasse bouger le défilement
+  useLayoutEffect(() => {
+    pendingSpot.current = readPersisted('list:scroll', parseScrollSpot)
+    restoringScroll.current = pendingSpot.current !== undefined
+    let frame = 0
+    const save = () => {
+      frame = 0
+      if (!restoringScroll.current) writePersisted('list:scroll', { y: window.scrollY, page: pageRef.current })
+    }
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(save) }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(frame)
+    }
+  }, [])
+
+  useEffect(() => {
+    const spot = pendingSpot.current
+    if (!spot || loading) return
+    pendingSpot.current = undefined
+    ;(async () => {
+      let more = hasMore
+      for (let p = 1; p <= spot.page && more; p++) more = await fetchPage(p, true)
+      requestAnimationFrame(() => {
+        window.scrollTo(0, spot.y)
+        restoringScroll.current = false
+      })
+    })()
+  }, [loading, hasMore, fetchPage])
 
   // Recharge depuis la page 0 si recherche/filtres/tri/refreshKey changent
   useEffect(() => {

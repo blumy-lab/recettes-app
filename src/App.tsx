@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AuthProvider } from './contexts/AuthContext'
 import { useAuth } from './hooks/useAuth'
 import { HouseholdsProvider } from './hooks/useHouseholds'
@@ -21,6 +21,7 @@ import { supabase } from './lib/supabase'
 import { getPendingCount } from './lib/offlineQueue'
 import { isValidRecipeId } from './lib/publicRecipeUrl'
 import { clearPersisted } from './lib/persistedState'
+import { syncHistory, readEntry } from './lib/navHistory'
 import { loadNav, saveNav, DEFAULT_NAV, viewNeedsRecipe, type View, type NavState } from './lib/navState'
 import './App.css'
 
@@ -52,6 +53,38 @@ function AppContent() {
   useEffect(() => {
     saveNav({ view, returnView, recipeId: selectedRecipe?.id ?? restoring?.id ?? null })
   }, [view, returnView, selectedRecipe, restoring])
+
+  // Historique du navigateur : le geste « retour » du téléphone revient à l'écran précédent
+  const selectedRef = useRef<Recipe | null>(null)
+  useEffect(() => { selectedRef.current = selectedRecipe }, [selectedRecipe])
+
+  useEffect(() => {
+    syncHistory({ view, returnView, recipeId: selectedRecipe?.id ?? restoring?.id ?? null })
+  }, [view, returnView, selectedRecipe, restoring])
+
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      const entry = readEntry(e.state)
+      if (!entry) return
+      const { view: v, returnView: rv, recipeId } = entry.nav
+      setView(v)
+      setReturnView(rv)
+      if (viewNeedsRecipe(v) && recipeId) {
+        if (selectedRef.current?.id !== recipeId) {
+          setSelectedRecipe(null)
+          setRestoring({ id: recipeId, view: v })
+        }
+      } else {
+        setSelectedRecipe(null)
+        setRestoring(null)
+      }
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  // Chaque nouvel écran s'ouvre en haut de page
+  useEffect(() => { window.scrollTo(0, 0) }, [view])
 
   // Recharge la recette de la fiche/édition ouverte avant l'actualisation
   useEffect(() => {
@@ -129,7 +162,7 @@ function AppContent() {
     if (inviteToken || menuInviteToken) {
       if (inviteToken) sessionStorage.setItem('pending_invite', inviteToken)
       if (menuInviteToken) sessionStorage.setItem('pending_menu_invite', menuInviteToken)
-      window.history.replaceState({}, '', '/')
+      window.history.replaceState(window.history.state, '', '/')
     }
   }, [])
 
@@ -169,7 +202,7 @@ function AppContent() {
     const params = new URLSearchParams(window.location.search)
     const sharedUrl = params.get('url')
     if (sharedUrl) {
-      window.history.replaceState({}, '', '/')
+      window.history.replaceState(window.history.state, '', '/')
       sessionStorage.setItem('shared_url', sharedUrl)
     }
 
