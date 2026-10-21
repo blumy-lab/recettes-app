@@ -33,7 +33,7 @@ describe('usePersistentState', () => {
   })
 
   it('retombe sur la valeur initiale si parse rejette la valeur sauvegardée', () => {
-    sessionStorage.setItem('mr:v1:portions', JSON.stringify('pas un nombre'))
+    localStorage.setItem('mr:v1:portions', JSON.stringify('pas un nombre'))
     const parseNumber = (raw: unknown) => (typeof raw === 'number' ? raw : undefined)
     const { result } = renderHook(() => usePersistentState('portions', 4, parseNumber))
     expect(result.current[0]).toBe(4)
@@ -44,6 +44,6 @@ describe('usePersistentState', () => {
     const b = renderHook(() => usePersistentState('b', 'B'))
     act(() => a.result.current[1]('A2'))
     expect(b.result.current[0]).toBe('B')
-    expect(sessionStorage.getItem('mr:v1:a')).toBe(JSON.stringify('A2'))
+    expect(localStorage.getItem('mr:v1:a')).toBe(JSON.stringify('A2'))
   })
 })

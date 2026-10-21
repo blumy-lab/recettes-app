@@ -48,6 +48,7 @@ function AppContent() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
   const [pendingMenuId, setPendingMenuId] = useState<string | null>(null)
+  const [recipeToAdd, setRecipeToAdd] = useState<Recipe | null>(null)
   const [returnView, setReturnView] = useState<View>(initialNav.returnView)
 
   useEffect(() => {
@@ -235,6 +236,12 @@ function AppContent() {
     setView('detail')
   }
 
+  // « Au menu » depuis une fiche : on ouvre le planificateur qui demande l'emplacement
+  const addToMenu = (recipe: Recipe) => {
+    setRecipeToAdd(recipe)
+    setView('planner')
+  }
+
   const goBack = () => {
     setSelectedRecipe(null)
     setView(returnView)
@@ -288,6 +295,7 @@ function AppContent() {
           onEdit={() => setView('edit')}
           onRefresh={triggerRefresh}
           seasonZone={seasonZone}
+          onAddToMenu={addToMenu}
         />
       )}
 
@@ -316,6 +324,7 @@ function AppContent() {
           isPublicView={true}
           onSaved={() => { triggerRefresh(); setView('recipes') }}
           seasonZone={seasonZone}
+          onAddToMenu={addToMenu}
         />
       )}
       {view === 'profile' && (
@@ -337,6 +346,8 @@ function AppContent() {
             pendingMenuId={pendingMenuId}
             onMenuOpened={() => setPendingMenuId(null)}
             seasonZone={seasonZone}
+            recipeToAdd={recipeToAdd}
+            onRecipeAddDone={() => setRecipeToAdd(null)}
           />
         </div>
       )}

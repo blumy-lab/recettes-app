@@ -162,7 +162,7 @@ describe('App — la page courante survit à une actualisation', () => {
   })
 
   it('un état sauvegardé illisible est ignoré', async () => {
-    sessionStorage.setItem('mr:v1:nav', '{pas du json')
+    localStorage.setItem('mr:v1:nav', '{pas du json')
 
     render(<App />)
 

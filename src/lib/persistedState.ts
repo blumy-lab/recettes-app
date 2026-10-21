@@ -1,14 +1,15 @@
-// Sauvegarde de l'état de l'interface dans sessionStorage : survit à une
-// actualisation de la page (F5, tirer pour actualiser, rechargement
-// automatique après une mise à jour de l'appli) mais pas à la fermeture
-// de l'onglet. Le préfixe versionné permet d'invalider d'anciennes données
-// si leur forme change.
+// Sauvegarde de l'état de l'interface dans localStorage : survit à une
+// actualisation de la page et à la fermeture puis réouverture de l'appli (on
+// retombe là où on s'était arrêté) tant que la dernière activité date de moins
+// d'un certain délai (voir expireStalePersisted). Effacé à la déconnexion. Le préfixe
+// versionné permet d'invalider d'anciennes données si leur forme change.
 
 const PREFIX = 'mr:v1:'
+const SAVED_AT_KEY = PREFIX + 'saved_at'
 
 export function readPersisted<T>(key: string, parse?: (raw: unknown) => T | undefined): T | undefined {
   try {
-    const raw = sessionStorage.getItem(PREFIX + key)
+    const raw = localStorage.getItem(PREFIX + key)
     if (raw === null) return undefined
     const value: unknown = JSON.parse(raw)
     return parse ? parse(value) : (value as T)
@@ -20,8 +21,9 @@ export function readPersisted<T>(key: string, parse?: (raw: unknown) => T | unde
 
 export function writePersisted(key: string, value: unknown): void {
   try {
-    if (value === undefined) sessionStorage.removeItem(PREFIX + key)
-    else sessionStorage.setItem(PREFIX + key, JSON.stringify(value))
+    if (value === undefined) localStorage.removeItem(PREFIX + key)
+    else localStorage.setItem(PREFIX + key, JSON.stringify(value))
+    localStorage.setItem(SAVED_AT_KEY, String(Date.now()))
   } catch {
     // stockage plein ou indisponible : l'appli continue sans persistance
   }
@@ -32,12 +34,23 @@ export function clearPersisted(prefix = ''): void {
   try {
     const full = PREFIX + prefix
     const toRemove: string[] = []
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i)
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
       if (k && k.startsWith(full)) toRemove.push(k)
     }
-    toRemove.forEach(k => sessionStorage.removeItem(k))
+    toRemove.forEach(k => localStorage.removeItem(k))
   } catch {
     // idem
+  }
+}
+
+// À appeler une fois au démarrage : si rien n'a été enregistré depuis plus de
+// maxAgeMs, l'ancien état (page, brouillons) est oublié plutôt que restauré.
+export function expireStalePersisted(maxAgeMs: number, now = Date.now()): void {
+  try {
+    const savedAt = Number(localStorage.getItem(SAVED_AT_KEY))
+    if (savedAt && now - savedAt > maxAgeMs) clearPersisted()
+  } catch {
+    // stockage indisponible : rien à oublier
   }
 }

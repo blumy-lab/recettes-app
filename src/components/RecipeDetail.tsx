@@ -25,6 +25,7 @@ interface Props {
   isPublicView?: boolean
   onSaved?: () => void
   seasonZone?: SeasonZone | null
+  onAddToMenu?: (recipe: Recipe) => void
 }
 
 function scaleQty(qty: string, ratio: number): string {
@@ -36,7 +37,7 @@ function scaleQty(qty: string, ratio: number): string {
   return String(Math.round(result * 10) / 10)
 }
 
-export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPublicView = false, onSaved, seasonZone = null }: Props) {
+export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPublicView = false, onSaved, seasonZone = null, onAddToMenu }: Props) {
   const { confirm } = useConfirm()
   const isSeasonal = useMemo(
     () => seasonZone ? isRecipeInSeason(recipe.ingredients, seasonZone) : false,
@@ -379,9 +380,16 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
         <section className="detail-section">
           <div className="section-header">
             <h2>Ingrédients</h2>
-            <button className="btn-primary small" onClick={handleAddToShopping} disabled={adding}>
-              {adding ? '…' : '🛒 Ajouter aux courses'}
-            </button>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {onAddToMenu && (
+                <button className="btn-outline small" onClick={() => onAddToMenu(recipe)}>
+                  📅 Au menu
+                </button>
+              )}
+              <button className="btn-primary small" onClick={handleAddToShopping} disabled={adding}>
+                {adding ? '…' : '🛒 Ajouter aux courses'}
+              </button>
+            </div>
           </div>
 
           <div className="portions-row">

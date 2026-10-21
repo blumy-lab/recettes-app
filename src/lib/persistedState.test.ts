@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readPersisted, writePersisted, clearPersisted } from './persistedState'
+import { readPersisted, writePersisted, clearPersisted, expireStalePersisted } from './persistedState'
 import { loadNav, saveNav, DEFAULT_NAV, isView, viewNeedsRecipe } from './navState'
 
 describe('persistedState', () => {
@@ -13,7 +13,7 @@ describe('persistedState', () => {
   })
 
   it('ignore un JSON corrompu au lieu de planter', () => {
-    sessionStorage.setItem('mr:v1:casse', '{pas du json')
+    localStorage.setItem('mr:v1:casse', '{pas du json')
     expect(readPersisted('casse')).toBeUndefined()
   })
 
@@ -32,26 +32,26 @@ describe('persistedState', () => {
     writePersisted('form:new:title', 'a')
     writePersisted('form:new:steps', ['b'])
     writePersisted('form:42:title', 'c')
-    sessionStorage.setItem('autre-appli', 'intact')
+    localStorage.setItem('autre-appli', 'intact')
 
     clearPersisted('form:new:')
 
     expect(readPersisted('form:new:title')).toBeUndefined()
     expect(readPersisted('form:new:steps')).toBeUndefined()
     expect(readPersisted('form:42:title')).toBe('c')
-    expect(sessionStorage.getItem('autre-appli')).toBe('intact')
+    expect(localStorage.getItem('autre-appli')).toBe('intact')
   })
 
   it('clearPersisted sans préfixe efface tout l\'état de l\'appli (déconnexion) mais pas les autres clés', () => {
     writePersisted('nav', { view: 'shopping' })
     writePersisted('list:search', 'poulet')
-    sessionStorage.setItem('pending_invite', 'token')
+    localStorage.setItem('pending_invite', 'token')
 
     clearPersisted()
 
     expect(readPersisted('nav')).toBeUndefined()
     expect(readPersisted('list:search')).toBeUndefined()
-    expect(sessionStorage.getItem('pending_invite')).toBe('token')
+    expect(localStorage.getItem('pending_invite')).toBe('token')
   })
 })
 
@@ -81,7 +81,7 @@ describe('navState', () => {
   })
 
   it('ignore une vue inconnue (version précédente de l\'appli)', () => {
-    sessionStorage.setItem('mr:v1:nav', JSON.stringify({ view: 'ancienne-vue', returnView: 'recipes', recipeId: null }))
+    localStorage.setItem('mr:v1:nav', JSON.stringify({ view: 'ancienne-vue', returnView: 'recipes', recipeId: null }))
     expect(loadNav()).toEqual(DEFAULT_NAV)
   })
 
@@ -90,5 +90,30 @@ describe('navState', () => {
     expect(isView('nimporte-quoi')).toBe(false)
     expect(viewNeedsRecipe('edit')).toBe(true)
     expect(viewNeedsRecipe('recipes')).toBe(false)
+  })
+})
+
+describe('expireStalePersisted', () => {
+  const DAY = 24 * 60 * 60 * 1000
+
+  it('garde l\'état récent', () => {
+    writePersisted('list:search', 'poulet')
+    expireStalePersisted(DAY, Date.now() + DAY - 1000)
+    expect(readPersisted('list:search')).toBe('poulet')
+  })
+
+  it('oublie un état plus vieux que le délai', () => {
+    writePersisted('list:search', 'poulet')
+    writePersisted('nav', { view: 'shopping', returnView: 'recipes', recipeId: null })
+    expireStalePersisted(DAY, Date.now() + DAY + 1000)
+    expect(readPersisted('list:search')).toBeUndefined()
+    expect(loadNav()).toEqual(DEFAULT_NAV)
+  })
+
+  it('ne touche pas aux données des autres clés du navigateur', () => {
+    localStorage.setItem('profileBannerDismissed', '1')
+    writePersisted('a', 1)
+    expireStalePersisted(DAY, Date.now() + 2 * DAY)
+    expect(localStorage.getItem('profileBannerDismissed')).toBe('1')
   })
 })

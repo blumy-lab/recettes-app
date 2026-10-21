@@ -174,11 +174,14 @@ interface Props {
   pendingMenuId?: string | null
   onMenuOpened?: () => void
   seasonZone?: SeasonZone | null
+  // recette envoyée depuis sa fiche (« Au menu ») : on attend que l'utilisateur choisisse l'emplacement
+  recipeToAdd?: Recipe | null
+  onRecipeAddDone?: () => void
 }
 
 /* ── Component ── */
 
-export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRecipe, defaultDietaryFilters = [], pendingMenuId, onMenuOpened, seasonZone = null }: Props) {
+export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRecipe, defaultDietaryFilters = [], pendingMenuId, onMenuOpened, seasonZone = null, recipeToAdd = null, onRecipeAddDone }: Props) {
   const { confirm } = useConfirm()
   const [screen, setScreen] = usePersistentState<Screen>('planner:screen', 'list', parseScreen)
   const [config, setConfig] = usePersistentState<MenuConfig>(
@@ -367,6 +370,27 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
     setPickerSearch('')
   }
 
+  const handlePlaceRecipe = (slot: MenuSlot) => {
+    if (!recipeToAdd) return
+    handlePickRecipe(slot, recipeToAdd)
+    showToast(`« ${recipeToAdd.title} » ajoutée au menu`)
+    onRecipeAddDone?.()
+  }
+
+  const addBanner = recipeToAdd && (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'var(--primary)', color: '#fff', fontSize: 13 }}>
+      <span style={{ flex: 1 }}>
+        {screen === 'grid'
+          ? <>Touchez <strong>📌 Ici</strong> pour mettre « {recipeToAdd.title} » à cet emplacement</>
+          : <>Ouvrez ou créez un menu pour y ajouter « {recipeToAdd.title} »</>}
+      </span>
+      <button
+        style={{ background: 'none', border: '1px solid #fff', color: '#fff', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontSize: 12 }}
+        onClick={() => onRecipeAddDone?.()}
+      >Annuler</button>
+    </div>
+  )
+
   const toggleLock = (slot: MenuSlot) => {
     const newSlot = { ...slot, locked: !slot.locked }
     setSlots(prev => prev.map(s => s === slot ? newSlot : s))
@@ -503,6 +527,7 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
         <button className="btn-icon" onClick={onBack}>←</button>
         <h1>Mes menus</h1>
       </header>
+      {addBanner}
       <div className="detail-content">
         <button className="btn-primary" style={{ width: '100%', marginBottom: 24 }} onClick={() => setScreen('config')}>
           + Créer un menu
@@ -746,6 +771,7 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
           {saving ? '…' : '💾 Sauver'}
         </button>
       </header>
+      {addBanner}
 
       <div style={{ display: 'flex', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
         <button className="btn-outline small" style={{ flex: 1 }} onClick={handleRegenerate}>
@@ -811,6 +837,9 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
                       {slot.recipeTitle || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>Aucune recette disponible</span>}
                     </div>
                   </div>
+                  {recipeToAdd && (
+                    <button className="btn-primary small" onClick={() => handlePlaceRecipe(slot)} style={{ flexShrink: 0 }}>📌 Ici</button>
+                  )}
                   <button className="btn-icon small" onClick={() => handleReplace(slot)} title="Remplacer aléatoirement" style={{ flexShrink: 0 }}>🔀</button>
                   <button className="btn-icon small" onClick={() => { setPickerSlot(slot); setPickerSearch('') }} title="Choisir une recette" style={{ flexShrink: 0 }}>✏️</button>
                   <button
