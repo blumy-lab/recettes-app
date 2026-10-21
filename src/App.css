@@ -31,7 +31,8 @@
   --danger:         oklch(0.60 0.18 25);
   --success:        oklch(0.60 0.14 145);
   --error:          oklch(0.60 0.18 25);
-  --nav-height:     68px;
+  --safe-bottom:    env(safe-area-inset-bottom, 0px);
+  --nav-height:     calc(68px + var(--safe-bottom));
   --radius:         16px;
   --radius-sm:      10px;
   --shadow-sm:      0 2px 12px rgba(0,0,0,.35);
@@ -765,6 +766,7 @@ h1, h2, h3 {
   width: 100%;
   max-width: 480px;
   height: var(--nav-height);
+  padding-bottom: var(--safe-bottom);
   display: flex;
   background: var(--surface);
   border-top: 1px solid var(--border-light);
@@ -2073,6 +2075,8 @@ h1, h2, h3 {
   color: var(--text);
   font-size: 0.82rem;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: background 0.12s, color 0.12s;
 }
 
@@ -2139,6 +2143,7 @@ h1, h2, h3 {
 
 .sort-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 0 16px 12px;
   align-items: center;
