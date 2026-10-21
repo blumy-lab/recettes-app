@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Recipe } from '../types'
 import { parseStepDuration } from '../lib/parseStepDuration'
+import { usePersistentState } from '../hooks/usePersistentState'
 
 interface Props {
   recipe: Recipe
@@ -20,7 +21,12 @@ export default function CookingMode({ recipe, onExit }: Props) {
   const steps = recipe.steps ?? []
   const totalSteps = steps.length
 
-  const [currentStep, setCurrentStep] = useState(0)
+  // L'étape en cours est conservée après une actualisation (effacée à la sortie du mode cuisine)
+  const [currentStep, setCurrentStep] = usePersistentState(
+    `cooking:${recipe.id}:step`,
+    0,
+    (raw) => typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 ? Math.min(raw, Math.max(0, totalSteps - 1)) : undefined,
+  )
   const [slideKey, setSlideKey] = useState(0)
   const [slideDir, setSlideDir] = useState<'forward' | 'back'>('forward')
 

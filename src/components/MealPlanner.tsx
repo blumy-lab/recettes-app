@@ -7,6 +7,7 @@ import {
 } from '../store'
 import { supabase } from '../lib/supabase'
 import { useConfirm } from '../hooks/useConfirm'
+import { usePersistentState } from '../hooks/usePersistentState'
 import { detectRayon } from '../rayons'
 import { mergeQuantity } from '../lib/units'
 import { scorePantryMatch } from '../lib/pantryMatcher'
@@ -128,6 +129,42 @@ const TAG_FILTERS = ['vegetarien', 'vegan', 'sans-porc', 'sans-gluten', 'sans-la
 
 type Screen = 'list' | 'config' | 'grid' | 'export'
 
+/* ── Brouillon conservé après une actualisation ── */
+
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const MEAL_TYPES: MenuMealType[] = ['entree', 'plat', 'dessert']
+
+// L'écran « export » n'est pas restaurable (la liste consolidée est recalculée à la demande) : retour à la grille.
+const parseScreen = (raw: unknown): Screen | undefined =>
+  raw === 'export' ? 'grid' : raw === 'list' || raw === 'config' || raw === 'grid' ? raw : undefined
+
+const parseString = (raw: unknown) => (typeof raw === 'string' ? raw : undefined)
+const parseBoolean = (raw: unknown) => (typeof raw === 'boolean' ? raw : undefined)
+const parseNullableString = (raw: unknown) => (raw === null || typeof raw === 'string' ? raw : undefined)
+
+function parseConfig(raw: unknown): MenuConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const c = raw as Record<string, unknown>
+  if (!isNum(c.days) || !isNum(c.entrees) || !isNum(c.plats) || !isNum(c.desserts) || !isNum(c.persons)) return undefined
+  if (!Array.isArray(c.tags) || !c.tags.every(t => typeof t === 'string')) return undefined
+  return {
+    days: c.days, entrees: c.entrees, plats: c.plats, desserts: c.desserts, persons: c.persons,
+    tags: c.tags as string[],
+    considerSeasonality: typeof c.considerSeasonality === 'boolean' ? c.considerSeasonality : true,
+  }
+}
+
+function parseSlots(raw: unknown): MenuSlot[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const valid = raw.every(s => {
+    if (!s || typeof s !== 'object') return false
+    const slot = s as Record<string, unknown>
+    return isNum(slot.day) && MEAL_TYPES.includes(slot.mealType as MenuMealType) && isNum(slot.position)
+      && typeof slot.recipeId === 'string' && typeof slot.recipeTitle === 'string' && typeof slot.locked === 'boolean'
+  })
+  return valid ? (raw as MenuSlot[]) : undefined
+}
+
 interface Props {
   recipes: Recipe[]
   onBack: () => void
@@ -143,10 +180,14 @@ interface Props {
 
 export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRecipe, defaultDietaryFilters = [], pendingMenuId, onMenuOpened, seasonZone = null }: Props) {
   const { confirm } = useConfirm()
-  const [screen, setScreen] = useState<Screen>('list')
-  const [config, setConfig] = useState<MenuConfig>({ days: 7, entrees: 0, plats: 7, desserts: 0, tags: defaultDietaryFilters, persons: 4, considerSeasonality: true })
-  const [slots, setSlots] = useState<MenuSlot[]>([])
-  const [menuName, setMenuName] = useState('')
+  const [screen, setScreen] = usePersistentState<Screen>('planner:screen', 'list', parseScreen)
+  const [config, setConfig] = usePersistentState<MenuConfig>(
+    'planner:config',
+    () => ({ days: 7, entrees: 0, plats: 7, desserts: 0, tags: defaultDietaryFilters, persons: 4, considerSeasonality: true }),
+    parseConfig,
+  )
+  const [slots, setSlots] = usePersistentState<MenuSlot[]>('planner:slots', [], parseSlots)
+  const [menuName, setMenuName] = usePersistentState('planner:name', '', parseString)
   const [savedMenus, setSavedMenus] = useState<SavedMenu[]>([])
   const [publicRecipes, setPublicRecipes] = useState<Recipe[]>([])
   // Recettes découvertes hors du pool des publiques récentes (menu ouvert,
@@ -190,8 +231,8 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
   const [toast, setToast] = useState('')
   const [exportItems, setExportItems] = useState<ConsolidatedItem[]>([])
   // Sharing state
-  const [savedMenuId, setSavedMenuId] = useState<string | null>(null)
-  const [isMenuOwner, setIsMenuOwner] = useState(true)
+  const [savedMenuId, setSavedMenuId] = usePersistentState<string | null>('planner:menuId', null, parseNullableString)
+  const [isMenuOwner, setIsMenuOwner] = usePersistentState('planner:owner', true, parseBoolean)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [showShareModal, setShowShareModal] = useState(false)
   const [shareInput, setShareInput] = useState('')
@@ -227,6 +268,22 @@ export default function MealPlanner({ recipes, onBack, onGoToShopping, onOpenRec
     }, term ? 300 : 0)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [pickerSlot, pickerSearch, recipes, publicRecipes])
+
+  // Après une actualisation : réaligne le menu sauvegardé avec la base (un autre
+  // membre du foyer a pu le modifier) et recharge les recettes du menu restauré
+  // pour que titres, nutrition et liste de courses restent corrects.
+  useEffect(() => {
+    if (slots.length === 0) return
+    if (savedMenuId) {
+      fetchMenuItems(savedMenuId).then(({ slots: items, recipes: fetched }) => {
+        if (items.length > 0) setSlots(items)
+        mergeExtraRecipes(fetched)
+      }).catch(() => {})
+    } else {
+      getRecipesByIds([...new Set(slots.map(s => s.recipeId))]).then(mergeExtraRecipes).catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- au montage uniquement
+  }, [])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUserId(user.id) })

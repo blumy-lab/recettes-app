@@ -3,6 +3,8 @@ import type { Recipe, Ingredient } from '../types'
 import { generateId } from '../lib/uuid'
 import { saveRecipe } from '../store'
 import { TAG_DEFS, TAG_GROUPS } from '../tags'
+import { usePersistentState } from '../hooks/usePersistentState'
+import { clearPersisted } from '../lib/persistedState'
 
 interface Props {
   onBack: () => void
@@ -14,19 +16,41 @@ function emptyIngredient(): Ingredient {
   return { id: generateId(), quantity: '', unit: '', name: '' }
 }
 
+// Validation des brouillons relus depuis le stockage (la forme peut avoir changé)
+const parseString = (raw: unknown) => (typeof raw === 'string' ? raw : undefined)
+const parseStringArray = (raw: unknown) =>
+  Array.isArray(raw) && raw.every(x => typeof x === 'string') ? (raw as string[]) : undefined
+const parseStepList = (raw: unknown) => {
+  const list = parseStringArray(raw)
+  return list && list.length > 0 ? list : undefined
+}
+const parseIngredients = (raw: unknown) =>
+  Array.isArray(raw) && raw.length > 0 && raw.every(i =>
+    i && typeof i === 'object' &&
+    typeof (i as Ingredient).id === 'string' && typeof (i as Ingredient).name === 'string' &&
+    typeof (i as Ingredient).quantity === 'string' && typeof (i as Ingredient).unit === 'string'
+  ) ? (raw as Ingredient[]) : undefined
+
 export default function RecipeForm({ onBack, onSuccess, initial }: Props) {
-  const [title, setTitle] = useState(initial?.title || '')
-  const [imageUrl, setImageUrl] = useState(initial?.image_url || '')
-  const [servings, setServings] = useState(initial?.servings?.toString() || '')
-  const [prepTime, setPrepTime] = useState(initial?.prep_time?.toString() || '')
-  const [cookTime, setCookTime] = useState(initial?.cook_time?.toString() || '')
-  const [ingredients, setIngredients] = useState<Ingredient[]>(
-    initial?.ingredients?.length ? initial.ingredients : [emptyIngredient()]
+  // Brouillon conservé après une actualisation ; effacé à l'enregistrement ou au retour volontaire.
+  const draftPrefix = `form:${initial?.id ?? 'new'}:`
+  const discardDraft = () => clearPersisted(draftPrefix)
+  const [title, setTitle] = usePersistentState(`${draftPrefix}title`, initial?.title || '', parseString)
+  const [imageUrl, setImageUrl] = usePersistentState(`${draftPrefix}image`, initial?.image_url || '', parseString)
+  const [servings, setServings] = usePersistentState(`${draftPrefix}servings`, initial?.servings?.toString() || '', parseString)
+  const [prepTime, setPrepTime] = usePersistentState(`${draftPrefix}prep`, initial?.prep_time?.toString() || '', parseString)
+  const [cookTime, setCookTime] = usePersistentState(`${draftPrefix}cook`, initial?.cook_time?.toString() || '', parseString)
+  const [ingredients, setIngredients] = usePersistentState<Ingredient[]>(
+    `${draftPrefix}ingredients`,
+    () => initial?.ingredients?.length ? initial.ingredients : [emptyIngredient()],
+    parseIngredients,
   )
-  const [steps, setSteps] = useState<string[]>(
-    initial?.steps?.length ? initial.steps : ['']
+  const [steps, setSteps] = usePersistentState<string[]>(
+    `${draftPrefix}steps`,
+    () => initial?.steps?.length ? initial.steps : [''],
+    parseStepList,
   )
-  const [selectedTags, setSelectedTags] = useState<string[]>(initial?.tags || [])
+  const [selectedTags, setSelectedTags] = usePersistentState<string[]>(`${draftPrefix}tags`, initial?.tags || [], parseStringArray)
   const [error, setError] = useState('')
   const dragIngIdx = useRef<number | null>(null)
   const dragStepIdx = useRef<number | null>(null)
@@ -99,6 +123,7 @@ export default function RecipeForm({ onBack, onSuccess, initial }: Props) {
     setSaving(true)
     try {
       await saveRecipe(recipe)
+      discardDraft()
       onSuccess(recipe)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde')
@@ -110,7 +135,7 @@ export default function RecipeForm({ onBack, onSuccess, initial }: Props) {
   return (
     <div className="page">
       <header className="page-header">
-        <button className="btn-icon" onClick={onBack}>←</button>
+        <button className="btn-icon" onClick={() => { discardDraft(); onBack() }}>←</button>
         <h1>{initial ? 'Modifier la recette' : 'Nouvelle recette'}</h1>
         <button className="btn-primary small" onClick={handleSubmit} disabled={saving}>
           {saving ? '…' : initial ? 'Enregistrer' : 'Créer'}

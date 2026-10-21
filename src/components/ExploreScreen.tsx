@@ -4,8 +4,17 @@ import { getPublicRecipes, getFavoriteIds, getFavoriteRecipes, toggleFavorite } 
 import { FILTER_CHIPS, getTagDef } from '../tags'
 import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
 import { isHealthyRecipe } from '../lib/healthyFilter'
+import { usePersistentState } from '../hooks/usePersistentState'
 
 type SortMode = 'recent' | 'az' | 'duration' | 'favorites' | 'popular'
+
+const SORT_MODES: SortMode[] = ['recent', 'az', 'duration', 'favorites', 'popular']
+const parseSortMode = (raw: unknown) => SORT_MODES.find(m => m === raw)
+const parseString = (raw: unknown) => (typeof raw === 'string' ? raw : undefined)
+const parseBoolean = (raw: unknown) => (typeof raw === 'boolean' ? raw : undefined)
+const parseTab = (raw: unknown) => (raw === 'all' || raw === 'favorites' ? raw : undefined)
+const parseStringArray = (raw: unknown) =>
+  Array.isArray(raw) && raw.every(x => typeof x === 'string') ? (raw as string[]) : undefined
 
 interface Props {
   onSelect: (recipe: Recipe) => void
@@ -20,12 +29,12 @@ export default function ExploreScreen({ onSelect, dietaryFilters = [], seasonZon
   const [loadingMore, setLoadingMore] = useState(false)
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(false)
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [tab, setTab] = useState<'all' | 'favorites'>('all')
-  const [activeTagFilters, setActiveTagFilters] = useState<string[]>(dietaryFilters)
-  const [sortMode, setSortMode] = useState<SortMode>('recent')
-  const [healthyOnly, setHealthyOnly] = useState(false)
+  const [search, setSearch] = usePersistentState('explore:search', '', parseString)
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
+  const [tab, setTab] = usePersistentState<'all' | 'favorites'>('explore:tab', 'all', parseTab)
+  const [activeTagFilters, setActiveTagFilters] = usePersistentState<string[]>('explore:tags', dietaryFilters, parseStringArray)
+  const [sortMode, setSortMode] = usePersistentState<SortMode>('explore:sort', 'recent', parseSortMode)
+  const [healthyOnly, setHealthyOnly] = usePersistentState('explore:healthy', false, parseBoolean)
   // favoriteIds chargés une fois au montage, accessibles via ref pour éviter de déclencher un re-fetch
   const [initDone, setInitDone] = useState(false)
   const favoriteIdsRef = useRef<string[]>([])

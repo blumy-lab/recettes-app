@@ -5,8 +5,14 @@ import { useConfirm } from '../hooks/useConfirm'
 import { FILTER_CHIPS, getTagDef } from '../tags'
 import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
 import { isHealthyRecipe } from '../lib/healthyFilter'
+import { usePersistentState } from '../hooks/usePersistentState'
 
 type SortMode = 'recent' | 'az' | 'duration' | 'favorites' | 'popular'
+
+const SORT_MODES: SortMode[] = ['recent', 'az', 'duration', 'favorites', 'popular']
+const parseSortMode = (raw: unknown) => SORT_MODES.find(m => m === raw)
+const parseString = (raw: unknown) => (typeof raw === 'string' ? raw : undefined)
+const parseBoolean = (raw: unknown) => (typeof raw === 'boolean' ? raw : undefined)
 
 interface Props {
   onSelect: (recipe: Recipe) => void
@@ -25,8 +31,8 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
   const [loadingMore, setLoadingMore] = useState(false)
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(false)
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [search, setSearch] = usePersistentState('list:search', '', parseString)
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(() =>
     localStorage.getItem('profileBannerDismissed') === '1'
@@ -37,8 +43,8 @@ export default function RecipeList({ onSelect, onImport, onCreate, onGoToProfile
       return [...new Set([...saved, ...dietaryFilters])]
     } catch { return dietaryFilters }
   })
-  const [sortMode, setSortMode] = useState<SortMode>('recent')
-  const [healthyOnly, setHealthyOnly] = useState(false)
+  const [sortMode, setSortMode] = usePersistentState<SortMode>('list:sort', 'recent', parseSortMode)
+  const [healthyOnly, setHealthyOnly] = usePersistentState('list:healthy', false, parseBoolean)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {

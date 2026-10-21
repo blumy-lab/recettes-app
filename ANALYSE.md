@@ -235,6 +235,7 @@ supabase-*.sql            5 fichiers de schéma versionnés (partiel — voir §
 | App racine | `useState` dans `AppContent` | `view`, `recipes[]`, `selectedRecipe`, `dietaryFilters`, `isOnline`, `pendingMenuId` |
 | Composant | `useState` local | Tous les états d'UI de chaque composant |
 | Persistance locale | `localStorage` | `active_shopping_list_id`, `recipeTagFilters`, `profileBannerDismissed`, `theme`, bannières foyer |
+| Persistance de session | `sessionStorage` (clés `mr:v1:*`, `lib/persistedState.ts`, hook `usePersistentState`) | Page courante + recette ouverte (`lib/navState.ts`, rechargée par son id), brouillon de formulaire de recette, menu en cours du planificateur, recherche/tri/filtres de Recettes et Explorer, portions/notes/étape du mode cuisine. Survit à l'actualisation, effacé à la fermeture de l'onglet et à la déconnexion |
 | Offline | IndexedDB via `idb` | File de mutations `PendingMutation` (liste de courses uniquement) |
 
 Aucune librairie de state management globale (Redux, Zustand…) — choix cohérent vu la taille du projet.

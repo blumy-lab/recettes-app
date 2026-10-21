@@ -9,6 +9,13 @@ import CookingMode from './CookingMode'
 import { printRecipe } from '../lib/printRecipe'
 import { buildPublicRecipeUrl } from '../lib/publicRecipeUrl'
 import { isRecipeInSeason, type SeasonZone } from '../lib/seasonalCalendar'
+import { usePersistentState } from '../hooks/usePersistentState'
+import { readPersisted, writePersisted } from '../lib/persistedState'
+
+const parseString = (raw: unknown) => (typeof raw === 'string' ? raw : undefined)
+const parseBoolean = (raw: unknown) => (typeof raw === 'boolean' ? raw : undefined)
+const parseServings = (raw: unknown) =>
+  typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= 99 ? raw : undefined
 
 interface Props {
   recipe: Recipe
@@ -35,12 +42,16 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
     () => seasonZone ? isRecipeInSeason(recipe.ingredients, seasonZone) : false,
     [recipe.ingredients, seasonZone]
   )
-  const [servings, setServings] = useState(recipe.servings || 4)
+  // Portions et mode cuisine conservés après une actualisation (par recette)
+  const [servings, setServings] = usePersistentState(`detail:${recipe.id}:servings`, recipe.servings || 4, parseServings)
   const [adding, setAdding] = useState(false)
-  const [notes, setNotes] = useState(recipe.user_notes || '')
-  const [notesDirty, setNotesDirty] = useState(false)
+  // Notes : seul un brouillon non sauvegardé est conservé (sinon on garde la version de la base)
+  const notesKey = `detail:${recipe.id}:notes`
+  const [notesDraft] = useState(() => readPersisted(notesKey, parseString))
+  const [notes, setNotes] = useState(notesDraft ?? recipe.user_notes ?? '')
+  const [notesDirty, setNotesDirty] = useState(notesDraft !== undefined)
   const [savingNotes, setSavingNotes] = useState(false)
-  const [showNotes, setShowNotes] = useState(false)
+  const [showNotes, setShowNotes] = useState(notesDraft !== undefined)
   const [publishing, setPublishing] = useState(false)
   const [isPublic, setIsPublic] = useState(recipe.is_public || false)
   const [moderationStatus, setModerationStatus] = useState(recipe.moderation_status || 'private')
@@ -51,7 +62,7 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [cookingMode, setCookingMode] = useState(false)
+  const [cookingMode, setCookingMode] = usePersistentState(`detail:${recipe.id}:cooking`, false, parseBoolean)
   const [photoUrl, setPhotoUrl] = useState<string | null>(recipe.user_photo_url || null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -109,6 +120,7 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
     setSavingNotes(true)
     try {
       await saveRecipeNotes(recipe.id, notes)
+      writePersisted(notesKey, undefined)
       setNotesDirty(false)
     } finally {
       setSavingNotes(false)
@@ -415,7 +427,7 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
                 placeholder="Ajoutez vos notes personnelles, variantes, astuces…"
                 value={notes}
                 rows={4}
-                onChange={(e) => { setNotes(e.target.value); setNotesDirty(true) }}
+                onChange={(e) => { setNotes(e.target.value); setNotesDirty(true); writePersisted(notesKey, e.target.value) }}
                 style={{ width: '100%', marginTop: 8 }}
               />
               {notesDirty && (
@@ -504,7 +516,10 @@ export default function RecipeDetail({ recipe, onBack, onEdit, onRefresh, isPubl
       </div>
 
       {cookingMode && (
-        <CookingMode recipe={recipe} onExit={() => setCookingMode(false)} />
+        <CookingMode
+          recipe={recipe}
+          onExit={() => { writePersisted(`cooking:${recipe.id}:step`, undefined); setCookingMode(false) }}
+        />
       )}
     </div>
   )

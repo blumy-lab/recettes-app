@@ -109,4 +109,22 @@ describe('RecipeList', () => {
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith(mockRecipe)
   })
+
+  it('retrouve la recherche et le tri après une actualisation de la page', async () => {
+    vi.mocked(getRecipes).mockResolvedValue({ data: [mockRecipe], hasMore: false })
+
+    const first = render(<RecipeList {...defaultProps} />)
+    await screen.findByText('Poulet rôti')
+    fireEvent.change(screen.getByPlaceholderText('Rechercher une recette…'), { target: { value: 'poulet' } })
+    fireEvent.click(screen.getByText('A → Z'))
+    first.unmount() // = actualisation de la page
+
+    vi.mocked(getRecipes).mockClear()
+    render(<RecipeList {...defaultProps} />)
+    await screen.findByText('Poulet rôti')
+
+    expect((screen.getByPlaceholderText('Rechercher une recette…') as HTMLInputElement).value).toBe('poulet')
+    // la première requête utilise directement la recherche et le tri restaurés
+    expect(vi.mocked(getRecipes)).toHaveBeenCalledWith(expect.objectContaining({ search: 'poulet', sort: 'az' }))
+  })
 })

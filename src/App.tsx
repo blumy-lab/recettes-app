@@ -16,29 +16,65 @@ import ExploreScreen from './components/ExploreScreen'
 import PantryScreen from './components/PantryScreen'
 import PublicRecipeView from './components/PublicRecipeView'
 import type { Recipe, Profile } from './types'
-import { getRecipes, acceptInvite, setActiveListId, getProfile, acceptMenuInvite } from './store'
+import { getRecipes, getRecipesByIds, getPublicRecipeById, acceptInvite, setActiveListId, getProfile, acceptMenuInvite } from './store'
 import { supabase } from './lib/supabase'
 import { getPendingCount } from './lib/offlineQueue'
 import { isValidRecipeId } from './lib/publicRecipeUrl'
+import { clearPersisted } from './lib/persistedState'
+import { loadNav, saveNav, DEFAULT_NAV, viewNeedsRecipe, type View, type NavState } from './lib/navState'
 import './App.css'
-
-type View = 'recipes' | 'shopping' | 'planner' | 'explore' | 'pantry' | 'import' | 'import-photo' | 'create' | 'edit' | 'detail' | 'detail-public' | 'profile'
 
 function AppContent() {
   const { user, loading, signOut } = useAuth()
-  const [view, setView] = useState<View>(() =>
-    new URLSearchParams(window.location.search).get('url') ? 'import' : 'recipes'
+  // Page courante restaurée après une actualisation (un lien de partage ?url=
+  // garde la priorité et ouvre l'import).
+  const [initialNav] = useState<NavState>(() =>
+    new URLSearchParams(window.location.search).get('url')
+      ? { ...DEFAULT_NAV, view: 'import' }
+      : loadNav()
   )
+  const [view, setView] = useState<View>(initialNav.view)
   const [refreshKey, setRefreshKey] = useState(0)
   const [plannerRecipes, setPlannerRecipes] = useState<Recipe[]>([])
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
+  // Recette à recharger par son id après une actualisation (fiche, édition).
+  const [restoring, setRestoring] = useState<{ id: string; view: View } | null>(() =>
+    initialNav.recipeId && viewNeedsRecipe(initialNav.view) ? { id: initialNav.recipeId, view: initialNav.view } : null
+  )
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
   const [dietaryFilters, setDietaryFilters] = useState<string[]>([])
   const [seasonZone, setSeasonZone] = useState<Profile['season_zone'] | null>(null)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
   const [pendingMenuId, setPendingMenuId] = useState<string | null>(null)
-  const [returnView, setReturnView] = useState<View>('recipes')
+  const [returnView, setReturnView] = useState<View>(initialNav.returnView)
+
+  useEffect(() => {
+    saveNav({ view, returnView, recipeId: selectedRecipe?.id ?? restoring?.id ?? null })
+  }, [view, returnView, selectedRecipe, restoring])
+
+  // Recharge la recette de la fiche/édition ouverte avant l'actualisation
+  useEffect(() => {
+    if (!user || !restoring) return
+    let cancelled = false
+    const { id, view: restoredView } = restoring
+    const load = restoredView === 'detail-public'
+      ? getPublicRecipeById(id)
+      : getRecipesByIds([id]).then(found => found[0] ?? null)
+    load
+      .catch(() => null)
+      .then(recipe => {
+        if (cancelled) return
+        if (recipe) setSelectedRecipe(recipe)
+        else {
+          // recette supprimée ou devenue inaccessible : retour à la liste
+          setView(restoredView === 'detail-public' ? 'explore' : 'recipes')
+          setReturnView('recipes')
+        }
+        setRestoring(null)
+      })
+    return () => { cancelled = true }
+  }, [user, restoring])
 
   // Bandeau offline
   useEffect(() => {
@@ -173,6 +209,17 @@ function AppContent() {
     setReturnView('recipes')
   }
 
+  // Déconnexion : on efface l'état sauvegardé (page, brouillons) pour qu'il ne
+  // soit pas montré à la prochaine personne qui se connecte dans cet onglet.
+  const handleSignOut = () => {
+    clearPersisted()
+    setSelectedRecipe(null)
+    setRestoring(null)
+    setReturnView('recipes')
+    setView('recipes')
+    return signOut()
+  }
+
   // La nav reste visible dans detail, detail-public, planner et profile ; cachée dans les vues formulaire/import
   const isFullscreen = ['import', 'import-photo', 'create', 'edit'].includes(view)
 
@@ -183,6 +230,11 @@ function AppContent() {
           {offlinePendingCount > 0
             ? `Mode hors ligne — ${offlinePendingCount} modification${offlinePendingCount > 1 ? 's' : ''} en attente`
             : 'Mode hors ligne — les modifications seront synchronisées à la reconnexion'}
+        </div>
+      )}
+      {restoring && (
+        <div className="page">
+          <div className="empty-state"><div className="spinner" /></div>
         </div>
       )}
       {view === 'recipes' && (
@@ -235,7 +287,7 @@ function AppContent() {
       )}
       {view === 'profile' && (
         <ProfileScreen
-          onSignOut={signOut}
+          onSignOut={handleSignOut}
           isPasswordRecovery={isPasswordRecovery}
           onPasswordRecoveryDone={() => setIsPasswordRecovery(false)}
           onDietaryFiltersChange={setDietaryFilters}
